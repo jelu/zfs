@@ -46,6 +46,9 @@ Makefile.in
 /zfs-script-config.sh
 /aclocal.m4
 /autom4te.cache
+/confdefs.h
+/conftest.c
+build
 
 #
 # Top level generic files
@@ -54,3 +57,9 @@ Makefile.in
 tags
 TAGS
 cscope.*
+
+#
+# Packages
+*.rpm
+*.deb
+*.tar.gz
