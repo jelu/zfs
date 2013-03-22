@@ -42,6 +42,7 @@
 #include <sys/arc.h>
 #include <sys/zil.h>
 #include <sys/dsl_scan.h>
+#include <sys/zvol.h>
 
 /*
  * Virtual device management.
@@ -1074,27 +1075,20 @@ vdev_open_child(void *arg)
 	vd->vdev_open_thread = NULL;
 }
 
-boolean_t
+static boolean_t
 vdev_uses_zvols(vdev_t *vd)
 {
-/*
- * Stacking zpools on top of zvols is unsupported until we implement a method
- * for determining if an arbitrary block device is a zvol without using the
- * path.  Solaris would check the 'zvol' path component but this does not
- * exist in the Linux port, so we really should do something like stat the
- * file and check the major number.  This is complicated by the fact that
- * we need to do this portably in user or kernel space.
- */
-#if 0
 	int c;
 
-	if (vd->vdev_path && strncmp(vd->vdev_path, ZVOL_DIR,
-	    strlen(ZVOL_DIR)) == 0)
+#ifdef _KERNEL
+	if (zvol_is_zvol(vd->vdev_path))
 		return (B_TRUE);
+#endif
+
 	for (c = 0; c < vd->vdev_children; c++)
 		if (vdev_uses_zvols(vd->vdev_child[c]))
 			return (B_TRUE);
-#endif
+
 	return (B_FALSE);
 }
 
@@ -1354,8 +1348,9 @@ vdev_validate(vdev_t *vd, boolean_t strict)
 	if (vd->vdev_ops->vdev_op_leaf && vdev_readable(vd)) {
 		uint64_t aux_guid = 0;
 		nvlist_t *nvl;
+		uint64_t txg = strict ? spa->spa_config_txg : -1ULL;
 
-		if ((label = vdev_label_read_config(vd)) == NULL) {
+		if ((label = vdev_label_read_config(vd, txg)) == NULL) {
 			vdev_set_state(vd, B_TRUE, VDEV_STATE_CANT_OPEN,
 			    VDEV_AUX_BAD_LABEL);
 			return (0);
@@ -1538,7 +1533,7 @@ vdev_reopen(vdev_t *vd)
 		    !l2arc_vdev_present(vd))
 			l2arc_add_vdev(spa, vd);
 	} else {
-		(void) vdev_validate(vd, B_TRUE);
+		(void) vdev_validate(vd, spa_last_synced_txg(spa));
 	}
 
 	/*
@@ -1999,14 +1994,14 @@ vdev_validate_aux(vdev_t *vd)
 	if (!vdev_readable(vd))
 		return (0);
 
-	if ((label = vdev_label_read_config(vd)) == NULL) {
+	if ((label = vdev_label_read_config(vd, -1ULL)) == NULL) {
 		vdev_set_state(vd, B_TRUE, VDEV_STATE_CANT_OPEN,
 		    VDEV_AUX_CORRUPT_DATA);
 		return (-1);
 	}
 
 	if (nvlist_lookup_uint64(label, ZPOOL_CONFIG_VERSION, &version) != 0 ||
-	    version > SPA_VERSION ||
+	    !SPA_VERSION_IS_SUPPORTED(version) ||
 	    nvlist_lookup_uint64(label, ZPOOL_CONFIG_GUID, &guid) != 0 ||
 	    guid != vd->vdev_guid ||
 	    nvlist_lookup_uint64(label, ZPOOL_CONFIG_POOL_STATE, &state) != 0) {

@@ -46,6 +46,8 @@
 #define FALSE 0
 #endif
 
+#include "smb.h"
+
 static sa_share_impl_t find_share(sa_handle_impl_t handle,
     const char *sharepath);
 static sa_share_impl_t alloc_share(const char *sharepath);
@@ -122,6 +124,7 @@ libshare_init(void)
 {
 	libshare_nfs_init();
 	libshare_iscsi_init();
+	libshare_smb_init();
 
 	/*
 	 * This bit causes /etc/dfs/sharetab to be updated before libzfs gets a

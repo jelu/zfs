@@ -64,6 +64,7 @@ AC_CONFIG_FILES([
 	etc/init.d/Makefile
 	etc/zfs/Makefile
 	man/Makefile
+	man/man1/Makefile
 	man/man5/Makefile
 	man/man8/Makefile
 	lib/Makefile
@@ -89,6 +90,7 @@ AC_CONFIG_FILES([
 	lib/libshare/Makefile
 	cmd/Makefile
 	cmd/zdb/Makefile
+	cmd/zhack/Makefile
 	cmd/zfs/Makefile
 	cmd/zinject/Makefile
 	cmd/zpool/Makefile
@@ -96,9 +98,8 @@ AC_CONFIG_FILES([
 	cmd/ztest/Makefile
 	cmd/zpios/Makefile
 	cmd/mount_zfs/Makefile
-	cmd/zpool_layout/Makefile
+	cmd/fsck_zfs/Makefile
 	cmd/zvol_id/Makefile
-	cmd/zpool_id/Makefile
 	cmd/vdev_id/Makefile
 	module/Makefile
 	module/avl/Makefile
@@ -117,15 +118,18 @@ AC_CONFIG_FILES([
 	scripts/zpios-profile/Makefile
 	scripts/zpios-test/Makefile
 	scripts/zpool-config/Makefile
-	scripts/zpool-layout/Makefile
 	scripts/common.sh
-	zfs.spec
-	zfs-modules.spec
-	PKGBUILD-zfs
-	PKGBUILD-zfs-modules
+	rpm/Makefile
+	rpm/fedora/Makefile
+	rpm/fedora/zfs.spec
+	rpm/fedora/zfs-kmod.spec
+	rpm/fedora/zfs-dkms.spec
+	rpm/generic/Makefile
+	rpm/generic/zfs.spec
+	rpm/generic/zfs-kmod.spec
+	rpm/generic/zfs-dkms.spec
 	zfs-script-config.sh
 	zfs.release
-	dkms.conf
 ])
 
 AC_OUTPUT

@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011 by Delphix. All rights reserved.
+ * Copyright (c) 2012 by Delphix. All rights reserved.
  * Copyright (c) 2012, Joyent, Inc. All rights reserved.
  */
 
@@ -86,7 +86,12 @@ typedef struct dsl_dataset_phys {
 	uint64_t ds_creation_time;	/* seconds since 1970 */
 	uint64_t ds_creation_txg;
 	uint64_t ds_deadlist_obj;	/* DMU_OT_DEADLIST */
-	uint64_t ds_used_bytes;
+	/*
+	 * ds_referenced_bytes, ds_compressed_bytes, and ds_uncompressed_bytes
+	 * include all blocks referenced by this dataset, including those
+	 * shared with any other datasets.
+	 */
+	uint64_t ds_referenced_bytes;
 	uint64_t ds_compressed_bytes;
 	uint64_t ds_uncompressed_bytes;
 	uint64_t ds_unique_bytes;	/* only relevant to snapshots */
@@ -246,6 +251,8 @@ int dsl_dataset_block_kill(dsl_dataset_t *ds, const blkptr_t *bp,
 boolean_t dsl_dataset_block_freeable(dsl_dataset_t *ds, const blkptr_t *bp,
     uint64_t blk_birth);
 uint64_t dsl_dataset_prev_snap_txg(dsl_dataset_t *ds);
+int dsl_dataset_snap_lookup(dsl_dataset_t *ds, const char *name,
+    uint64_t *value);
 
 void dsl_dataset_dirty(dsl_dataset_t *ds, dmu_tx_t *tx);
 void dsl_dataset_stats(dsl_dataset_t *os, nvlist_t *nv);

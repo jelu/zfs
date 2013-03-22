@@ -67,7 +67,7 @@ typedef void	vdev_state_change_func_t(vdev_t *vd, int, int);
 typedef void	vdev_hold_func_t(vdev_t *vd);
 typedef void	vdev_rele_func_t(vdev_t *vd);
 
-typedef struct vdev_ops {
+typedef const struct vdev_ops {
 	vdev_open_func_t		*vdev_op_open;
 	vdev_close_func_t		*vdev_op_close;
 	vdev_asize_func_t		*vdev_op_asize;
@@ -210,7 +210,7 @@ struct vdev {
 	 * For DTrace to work in userland (libzpool) context, these fields must
 	 * remain at the end of the structure.  DTrace will use the kernel's
 	 * CTF definition for 'struct vdev', and since the size of a kmutex_t is
-	 * larger in userland, the offsets for the rest fields would be
+	 * larger in userland, the offsets for the rest of the fields would be
 	 * incorrect.
 	 */
 	kmutex_t	vdev_dtl_lock;	/* vdev_dtl_{map,resilver}	*/
@@ -265,6 +265,7 @@ typedef struct vdev_label {
 #define	VDEV_LABEL_START_SIZE	(2 * sizeof (vdev_label_t) + VDEV_BOOT_SIZE)
 #define	VDEV_LABEL_END_SIZE	(2 * sizeof (vdev_label_t))
 #define	VDEV_LABELS		4
+#define	VDEV_BEST_LABEL		VDEV_LABELS
 
 #define	VDEV_ALLOC_LOAD		0
 #define	VDEV_ALLOC_ADD		1
