@@ -60,18 +60,16 @@
 #include "libshare_impl.h"
 #include "iscsi.h"
 
-static sa_fstype_t *iscsi_fstype;
-boolean_t iscsi_available;
+static boolean_t iscsi_available(void);
 
-#define PROC_IET_VOLUME "/proc/net/iet/volume"
-#define IETM_CMD_PATH "/usr/sbin/ietadm"
-#define DOMAINNAME_FILE "/etc/domainname"
-#define TARGET_NAME_FILE "/etc/iscsi_target_id"
-#define EXTRA_SHARE_SCRIPT "/sbin/zfs_share_iscsi"
+static sa_fstype_t *iscsi_fstype;
 
 /*
  * Generate a target name using the current year and month,
- * the domain name and the path:
+ * the domain name and the path.
+ *
+ * OR: Use information from /etc/iscsi_target_id:
+ *     Example: iqn.2012-11.com.bayour
  *
  * => iqn.yyyy-mm.tld.domain:path
  */
@@ -344,6 +342,12 @@ next:
 		target->blocksize = atoi(blocksize);
 		strncpy(target->path, path, sizeof (target->path));
 
+fprintf(stderr, "  ");
+#ifdef DEBUG
+		fprintf(stderr, "    iscsi_retrieve_targets: target=%s, tid=%d, path=%s\n",
+			target->name, target->tid, target->path);
+#endif
+		
 		/* Append the target to the list of new targets */
 		target->next = new_targets;
 		new_targets = target;
@@ -377,6 +381,12 @@ iscsi_enable_share_one(int tid, char *sharename, const char *sharepath,
 	char params_name[255], params_path[255], tid_s[11];
 	int rc;
 
+fprintf(stderr, "  ");
+#ifdef DEBUG
+	fprintf(stderr, "iscsi_enable_share_one: tid=%d, sharename=%s, sharepath=%s, iotype=%s\n",
+		tid, sharename, sharepath, iotype);
+#endif
+
 	/*
 	 * ietadm --op new --tid $next --params Name=$iqn
 	 * ietadm --op new --tid $next --lun=0 --params \
@@ -384,7 +394,7 @@ iscsi_enable_share_one(int tid, char *sharename, const char *sharepath,
 	 */
 
 	/* ====== */
-	/* PART 1 */
+	/* PART 1 - do the (inital) share. No path etc... */
 	snprintf(params_name, sizeof (params_name), "Name=%s", sharename);
 
 	/* int: between -2,147,483,648 and 2,147,483,647 => 10 chars + NUL */
@@ -404,7 +414,7 @@ iscsi_enable_share_one(int tid, char *sharename, const char *sharepath,
 		return SA_SYSTEM_ERR;
 
 	/* ====== */
-	/* PART 2 */
+	/* PART 2 - Set share path and lun. */
 	snprintf(params_path, sizeof (params_path),
 		 "Path=%s,Type=%s", sharepath, iotype);
 
@@ -419,7 +429,7 @@ iscsi_enable_share_one(int tid, char *sharename, const char *sharepath,
 		return SA_SYSTEM_ERR;
 
 	/* ====== */
-	/* Part 3 */
+	/* PART 3 - Run local update script. */
 	argv[0] = (char*)EXTRA_SHARE_SCRIPT;
 	argv[1] = tid_s;
 	argv[2] = NULL;
@@ -441,13 +451,12 @@ iscsi_enable_share(sa_share_impl_t impl_share)
 	char *shareopts;
 	char iqn[255];
 	int tid = 0;
-	iscsi_target_t *target = iscsi_targets;
 
-	if (!iscsi_available)
+	if (!iscsi_available())
 		return SA_SYSTEM_ERR;
 
 	shareopts = FSINFO(impl_share, iscsi_fstype)->shareopts;
-			   
+
 	if (shareopts == NULL) /* on/off */
 		return SA_SYSTEM_ERR;
 
@@ -457,10 +466,13 @@ iscsi_enable_share(sa_share_impl_t impl_share)
 	if (iscsi_generate_target(impl_share->dataset, iqn, sizeof (iqn)) < 0)
 		return SA_SYSTEM_ERR;
 
-	/* Go through list of targets, take next avail. */
-	while (target != NULL) {
-		tid = target->tid;
-		target = target->next;
+	/* Retreive the list of (possible) active shares */
+	iscsi_retrieve_targets();
+
+	/* Go through list of targets, get next avail TID. */
+	while (iscsi_targets != NULL) {
+		tid = iscsi_targets->tid;
+		iscsi_targets = iscsi_targets->next;
 	}
 	tid++; /* Next TID is/should be availible */
 
@@ -475,6 +487,8 @@ iscsi_disable_share_one(int tid)
 	char *argv[6];
 	char tid_s[11];
 	int rc;
+
+fprintf(stderr, "iscsi_disable_share_one: tid=%d\n", tid);
 
 	/* int: between -2,147,483,648 and 2,147,483,647 => 10 chars + NUL */
 	snprintf(tid_s, sizeof (tid_s), "%d", tid);
@@ -500,12 +514,23 @@ iscsi_disable_share_one(int tid)
 static int
 iscsi_disable_share(sa_share_impl_t impl_share)
 {
-	if (!iscsi_available) {
+	if (!iscsi_available()) {
 		/*
 		 * The share can't possibly be active, so nothing
 		 * needs to be done to disable it.
 		 */
 		return SA_OK;
+	}
+
+	/* Retreive the list of (possible) active shares */
+	iscsi_retrieve_targets();
+
+	while (iscsi_targets != NULL) {
+fprintf(stderr, "iscsi_disable_share: strcmp(%s, %s)\n", impl_share->sharepath, iscsi_targets->path);
+		if (strcmp(impl_share->sharepath, iscsi_targets->path) == 0)
+			return iscsi_disable_share_one(iscsi_targets->tid);
+
+		iscsi_targets = iscsi_targets->next;
 	}
 
 	return SA_OK;
@@ -515,12 +540,14 @@ int
 iscsi_disable_share_all(void)
 {
 	int rc = 0;
-	iscsi_target_t *target = iscsi_targets;
 
-	while (target != NULL) {
-		rc += iscsi_disable_share_one(target->tid);
+	/* Retreive the list of (possible) active shares */
+	iscsi_retrieve_targets();
 
-		target = target->next;
+	while (iscsi_targets != NULL) {
+		rc += iscsi_disable_share_one(iscsi_targets->tid);
+
+		iscsi_targets = iscsi_targets->next;
 	}
 
 	return rc;
@@ -529,13 +556,18 @@ iscsi_disable_share_all(void)
 static boolean_t
 iscsi_is_share_active(sa_share_impl_t impl_share)
 {
-	iscsi_target_t *target = iscsi_targets;
+	if (!iscsi_available())
+		return B_FALSE;
 
-	while (target != NULL) {
-		if (strcmp(impl_share->sharepath, target->path) == 0)
+	/* Retreive the list of (possible) active shares */
+	iscsi_retrieve_targets();
+
+	while (iscsi_targets != NULL) {
+fprintf(stderr, "  iscsi_is_share_active: strcmp(%s, %s)\n", impl_share->sharepath, iscsi_targets->path);
+		if (strcmp(impl_share->sharepath, iscsi_targets->path) == 0)
 			return B_TRUE;
 
-		target = target->next;
+		iscsi_targets = iscsi_targets->next;
 	}
 
 	return B_FALSE;
@@ -556,6 +588,17 @@ iscsi_update_shareopts(sa_share_impl_t impl_share, const char *resource,
 	char *shareopts_dup;
 	boolean_t needs_reshare = B_FALSE;
 	char *old_shareopts;
+
+	if(!impl_share && !impl_share->dataset)
+		return SA_SYSTEM_ERR;
+
+fprintf(stderr, "    ");
+#ifdef DEBUG
+	fprintf(stderr, "iscsi_update_shareopts: share=%s, active=%d, old_shareopts=%s\n",
+		impl_share->dataset,
+		FSINFO(impl_share, iscsi_fstype)->active,
+		FSINFO(impl_share, iscsi_fstype)->shareopts);
+#endif
 
 	FSINFO(impl_share, iscsi_fstype)->active =
 		iscsi_is_share_active(impl_share);
@@ -600,10 +643,17 @@ static const sa_share_ops_t iscsi_shareops = {
 	.clear_shareopts = iscsi_clear_shareopts,
 };
 
+/*
+ * Provides a convenient wrapper for determing iscsi availability
+ */
+static boolean_t
+iscsi_available(void)
+{
+	return B_TRUE;
+}
+
 void
 libshare_iscsi_init(void)
 {
-	iscsi_available = (iscsi_retrieve_targets() == SA_OK);
-
 	iscsi_fstype = register_fstype("iscsi", &iscsi_shareops);
 }

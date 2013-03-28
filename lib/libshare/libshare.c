@@ -66,15 +66,6 @@ static int update_zfs_shares(sa_handle_impl_t impl_handle, const char *proto);
 static int fstypes_count;
 static sa_fstype_t *fstypes;
 
-boolean_t
-file_is_executable(char *file_name)
-{
-	if ((access(file_name, X_OK)) == 0)
-		/* File found */
-		return TRUE;
-	return FALSE;
-}
-
 sa_fstype_t *
 register_fstype(const char *name, const sa_share_ops_t *ops)
 {
@@ -185,6 +176,7 @@ parse_sharetab(sa_handle_impl_t impl_handle) {
 		if (strcmp(resource, "-") == 0)
 			resource = NULL;
 
+fprintf(stderr, "parse_sharetab: Calling process_share()\n");
 		(void) process_share(impl_handle, NULL, pathname, resource,
 		    fstype, options, description, NULL, B_TRUE);
 	}
@@ -218,8 +210,10 @@ update_sharetab(sa_handle_impl_t impl_handle)
 
 	impl_share = impl_handle->shares;
 	while (impl_share != NULL) {
+fprintf(stderr, "    update_sharetab: share=%s\n", impl_share->dataset);
 		fstype = fstypes;
 		while (fstype != NULL) {
+fprintf(stderr, "      fstype=%s, active=%d, shareopts=%s, sharepath=%s\n", fstype->name, FSINFO(impl_share, fstype)->active, FSINFO(impl_share, fstype)->shareopts, impl_share->sharepath);
 			if (FSINFO(impl_share, fstype)->active &&
 			    FSINFO(impl_share, fstype)->shareopts != NULL) {
 				resource = FSINFO(impl_share, fstype)->resource;
@@ -262,17 +256,20 @@ update_zfs_shares_cb(zfs_handle_t *zhp, void *pcookie)
 
 	if (type == ZFS_TYPE_FILESYSTEM &&
 	    zfs_iter_filesystems(zhp, update_zfs_shares_cb, pcookie) != 0) {
+fprintf(stderr, "update_zfs_shares_cb: type == ZFS_TYPE_FILESYSTEM && zfs_iter_filesystems() != 0\n");
 		zfs_close(zhp);
 		return 1;
 	}
 
-	if (type != ZFS_TYPE_FILESYSTEM) {
+	if (type != ZFS_TYPE_FILESYSTEM && type != ZFS_TYPE_VOLUME) {
+fprintf(stderr, "update_zfs_shares_cb: type != ZFS_TYPE_FILESYSTEM|ZFS_TYPE_VOLUME\n");
 		zfs_close(zhp);
 		return 0;
 	}
 
-	if (zfs_prop_get(zhp, ZFS_PROP_MOUNTPOINT, mountpoint,
-	    sizeof (mountpoint), NULL, NULL, 0, B_FALSE) != 0) {
+	if (type == ZFS_TYPE_FILESYSTEM && zfs_prop_get(zhp, ZFS_PROP_MOUNTPOINT,
+	    mountpoint, sizeof (mountpoint), NULL, NULL, 0, B_FALSE) != 0) {
+fprintf(stderr, "update_zfs_shares_cb: zfs_prop_get() != 0\n");
 		zfs_close(zhp);
 		return 0;
 	}
@@ -280,11 +277,13 @@ update_zfs_shares_cb(zfs_handle_t *zhp, void *pcookie)
 	dataset = (char *)zfs_get_name(zhp);
 
 	if (dataset == NULL) {
+fprintf(stderr, "update_zfs_shares_cb: dataset == NULL\n");
 		zfs_close(zhp);
 		return 0;
 	}
 
-	if (!zfs_is_mounted(zhp, NULL)) {
+	if (type == ZFS_TYPE_FILESYSTEM && !zfs_is_mounted(zhp, NULL)) {
+fprintf(stderr, "update_zfs_shares_cb: !zfs_is_mounted()\n");
 		zfs_close(zhp);
 		return 0;
 	}
@@ -430,8 +429,10 @@ process_share(sa_handle_impl_t impl_handle, sa_share_impl_t impl_share,
 			free(FSINFO(impl_share, fstype)->resource);
 			FSINFO(impl_share, fstype)->resource = resource_dup;
 
+fprintf(stderr, "  process_share: Calling fstype->ops->update_shareopts()\n");
 			rc = fstype->ops->update_shareopts(impl_share,
 			    resource, options);
+fprintf(stderr, "  process_share: rc=%d, from_sharetab=%d, new_share=%d\n", rc, from_sharetab, new_share);
 
 			if (rc == SA_OK && from_sharetab)
 				FSINFO(impl_share, fstype)->active = B_TRUE;
@@ -483,6 +484,7 @@ sa_fini(sa_handle_t handle)
 		next = impl_share->next;
 
 		if (impl_share->dataset == NULL) {
+fprintf(stderr, "sa_fini: impl_share->dataset == NULL\n");
 			/* remove item from the linked list */
 			*pcurr = next;
 
@@ -496,6 +498,7 @@ sa_fini(sa_handle_t handle)
 		impl_share = next;
 	}
 
+fprintf(stderr, "sa_fini: Calling update_sharetab()\n");
 	update_sharetab(impl_handle);
 
 	if (impl_handle->zfs_libhandle != NULL)
@@ -518,6 +521,7 @@ find_share(sa_handle_impl_t impl_handle, const char *sharepath)
 
 	impl_share = impl_handle->shares;
 	while (impl_share != NULL) {
+fprintf(stderr, "  find_share: strcmp(%s, %s)\n", impl_share->sharepath, sharepath);
 		if (strcmp(impl_share->sharepath, sharepath) == 0) {
 			break;
 		}
@@ -558,6 +562,7 @@ sa_enable_share(sa_share_t share, char *protocol)
 			update_zfs_share(impl_share, fstype->name);
 
 			rc = fstype->ops->enable_share(impl_share);
+fprintf(stderr, "  sa_enable_share: rc=%d\n", rc);
 
 			if (rc != SA_OK)
 				ret = rc;
@@ -570,6 +575,12 @@ sa_enable_share(sa_share_t share, char *protocol)
 		fstype = fstype->next;
 	}
 
+sa_share_impl_t impl_share_tmp = impl_share;
+while (impl_share_tmp != NULL) {
+	fprintf(stderr, "  sa_enable_share: share=%s\n", impl_share_tmp->dataset);
+	impl_share_tmp = impl_share_tmp->next;
+}
+fprintf(stderr, "  sa_enable_share: Calling update_sharetab()\n");
 	update_sharetab(impl_share->handle);
 
 	return (found_protocol ? ret : SA_INVALID_PROTOCOL);
@@ -593,7 +604,9 @@ sa_disable_share(sa_share_t share, char *protocol)
 
 	fstype = fstypes;
 	while (fstype != NULL) {
+fprintf(stderr, "  fstype != NULL (%s)\n", fstype->name);
 		if (protocol == NULL || strcmp(fstype->name, protocol) == 0) {
+fprintf(stderr, "  protocol == NULL || strcmp(%s, %s) => Calling disable_share()\n", fstype->name, protocol);		
 			rc = fstype->ops->disable_share(impl_share);
 
 			if (rc == SA_OK) {
@@ -609,6 +622,7 @@ sa_disable_share(sa_share_t share, char *protocol)
 		fstype = fstype->next;
 	}
 
+fprintf(stderr, "  sa_disable_share: Calling update_sharetab()\n");
 	update_sharetab(impl_share->handle);
 
 	return (found_protocol ? ret : SA_INVALID_PROTOCOL);
@@ -846,5 +860,6 @@ sa_update_sharetab_ts(sa_handle_t handle)
 {
 	sa_handle_impl_t impl_handle = (sa_handle_impl_t)handle;
 
+fprintf(stderr, "sa_update_sharetab_ts: Calling update_sharetab()\n");
 	update_sharetab(impl_handle);
 }

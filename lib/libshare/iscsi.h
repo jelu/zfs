@@ -24,6 +24,12 @@
  * Copyright (c) 2011 Gunnar Beutner
  */
 
+#define PROC_IET_VOLUME "/proc/net/iet/volume"
+#define IETM_CMD_PATH "/usr/sbin/ietadm"
+#define DOMAINNAME_FILE "/etc/domainname"
+#define TARGET_NAME_FILE "/etc/iscsi_target_id"
+#define EXTRA_SHARE_SCRIPT "/sbin/zfs_share_iscsi"
+
 typedef struct iscsi_target_s {
         int     tid;            /* Target ID */
         char    name[255];      /* Target Name */
@@ -33,7 +39,7 @@ typedef struct iscsi_target_s {
         char    iomode[20];     /* Target IO Mode */
         int     blocks;         /* Target Size (blocks) */
         int     blocksize;      /* Target Block Size (bytes) */
-        char    path[255];      /* Target Path */
+        char    path[PATH_MAX];	/* Target Path */
 
         struct iscsi_target_s *next;
 } iscsi_target_t;

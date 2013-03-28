@@ -66,7 +66,6 @@
 #include "zfs_iter.h"
 #include "zfs_util.h"
 #include "zfs_comutil.h"
-#include "../../libshare/iscsi.h"
 
 libzfs_handle_t *g_zfs;
 
@@ -5562,6 +5561,7 @@ share_mount_one(zfs_handle_t *zhp, int op, int flags, char *protocol,
 	 */
 	switch (op) {
 	case OP_SHARE:
+
 		shared_nfs = zfs_is_shared_nfs(zhp, NULL);
 		shared_smb = zfs_is_shared_smb(zhp, NULL);
 
@@ -6092,6 +6092,7 @@ unshare_unmount(int op, int argc, char **argv)
 
 		rewind(mnttab_file);
 		while (getmntent(mnttab_file, &entry) == 0) {
+
 			/* ignore non-ZFS entries */
 			if ((strcmp(entry.mnt_fstype, MNTTYPE_ZFS) != 0))
 				continue;
@@ -6191,9 +6192,6 @@ unshare_unmount(int op, int argc, char **argv)
 		uu_avl_walk_end(walk);
 		uu_avl_destroy(tree);
 		uu_avl_pool_destroy(pool);
-
-		if (op == OP_SHARE)
-			iscsi_disable_share_all();
 	} else {
 		if (argc != 1) {
 			if (argc == 0)

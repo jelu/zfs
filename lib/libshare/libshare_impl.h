@@ -68,4 +68,3 @@ typedef struct sa_handle_impl {
 } *sa_handle_impl_t;
 
 sa_fstype_t *register_fstype(const char *name, const sa_share_ops_t *ops);
-boolean_t file_is_executable(char *);
