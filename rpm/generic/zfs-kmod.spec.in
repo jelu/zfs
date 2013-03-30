@@ -84,7 +84,7 @@ done
 %build
 for kernel_version in %{?kernel_versions}; do
     cd _kmod_build_${kernel_version%%___*}
-    %configure \
+    ../%{module}-%{version}/configure \
         --with-config=kernel \
 %if 0%{?rhel}%{?fedora}
         --with-linux="${kernel_version##*___}" \
@@ -99,7 +99,6 @@ for kernel_version in %{?kernel_versions}; do
         --with-linux-obj="/lib/modules/${kernel_version%%___*}/build" \
 %endif
         --with-spl="/usr/src/spl-%{version}" \
-        --with-spl-obj="/usr/src/spl-%{version}/${kernel_version%%___*}" \
         %{debug} \
         %{debug_dmu_tx}
     make %{?_smp_mflags}
