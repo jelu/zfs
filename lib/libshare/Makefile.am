@@ -22,7 +22,3 @@ iscsi_test_SOURCES = \
 	$(top_srcdir)/lib/libshare/iscsi_test.c \
 	$(top_srcdir)/lib/libshare/iscsi.c \
 	$(top_srcdir)/lib/libshare/iscsi.h
-	$(top_srcdir)/lib/libshare/nfs.c \
-	$(top_srcdir)/lib/libshare/nfs.h \
-	$(top_srcdir)/lib/libshare/smb.c \
-	$(top_srcdir)/lib/libshare/smb.h

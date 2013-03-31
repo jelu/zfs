@@ -47,6 +47,15 @@
 #endif
 
 #include "smb.h"
+#include "iscsi.h"
+
+#ifndef TRUE
+#define TRUE 1
+#endif
+
+#ifndef FALSE
+#define FALSE 0
+#endif
 
 static sa_share_impl_t find_share(sa_handle_impl_t handle,
     const char *sharepath);
@@ -116,6 +125,7 @@ libshare_init(void)
 	libshare_nfs_init();
 	libshare_iscsi_init();
 	libshare_smb_init();
+	libshare_iscsi_init();
 
 	/*
 	 * This bit causes /etc/dfs/sharetab to be updated before libzfs gets a
@@ -384,10 +394,10 @@ process_share(sa_handle_impl_t impl_handle, sa_share_impl_t impl_share,
 
 		if (S_ISLNK(statbuf.st_mode)) {
 			if (stat(pathname, &statbuf) != 0)
-			return SA_BAD_PATH;
+				return SA_BAD_PATH;
 
 			if (!S_ISBLK(statbuf.st_mode))
-			return SA_BAD_PATH;
+				return SA_BAD_PATH;
 		}
 
 		impl_share = alloc_share(pathname);

@@ -102,17 +102,12 @@ iscsi_generate_target(const char *path, char *iqn, size_t iqn_len)
 #ifdef HAVE_GETDOMAINNAME
 		/* Retrieve the domain */
 		if (getdomainname(domain, sizeof (domain)) < 0) {
-			fprintf(stderr, "ERROR: Can't get domainname using getdomainname(): %s\n",
-				strerror(errno));
-			return -1;
-		}
-
-		if ((strlen(domain) == 0) || (strcmp(domain, "(none)") == 0)) {
+			/* Could not get domain via getdomainname() */
 #endif
 			domainname_fp = fopen(DOMAINNAME_FILE, "r");
 			if (domainname_fp == NULL) {
-				fprintf(stderr, "ERROR: Can't open %s: %s\n", DOMAINNAME_FILE,
-					strerror(errno));
+				fprintf(stderr, "ERROR: Can't open %s: %s\n",
+					DOMAINNAME_FILE, strerror(errno));
 				return -1;
 			}
 
@@ -120,8 +115,8 @@ iscsi_generate_target(const char *path, char *iqn, size_t iqn_len)
 				strncpy(domain, buffer, sizeof (domain)-1);
 				domain[strlen(domain)-1] = '\0';
 			} else {
-				fprintf(stderr, "ERROR: Can't read from %s: %s\n", DOMAINNAME_FILE,
-					strerror(errno));
+				fprintf(stderr, "ERROR: Can't read from %s: %s\n",
+					DOMAINNAME_FILE, strerror(errno));
 				return -1;
 			}
 
@@ -129,6 +124,12 @@ iscsi_generate_target(const char *path, char *iqn, size_t iqn_len)
 #ifdef HAVE_GETDOMAINNAME
 		}
 #endif
+
+		/* Tripple check that we really have a domainname! */
+		if ((strlen(domain) == 0) || (strcmp(domain, "(none)") == 0)) {
+			fprintf(stderr, "ERROR: Can't retreive domainname!\n");
+			return -1;
+		}
 
 		/* Reverse the domainname ('bayour.com' => 'com.bayour') */
 		strncpy(tmpdom, domain, sizeof (domain));
@@ -430,13 +431,15 @@ fprintf(stderr, "  ");
 
 	/* ====== */
 	/* PART 3 - Run local update script. */
-	argv[0] = (char*)EXTRA_SHARE_SCRIPT;
-	argv[1] = tid_s;
-	argv[2] = NULL;
+	if (access(EXTRA_SHARE_SCRIPT, X_OK) == 0) {
+		argv[0] = (char*)EXTRA_SHARE_SCRIPT;
+		argv[1] = tid_s;
+		argv[2] = NULL;
 
-	rc = libzfs_run_process(argv[0], argv, 0);
-	if (rc < 0)
-		return SA_SYSTEM_ERR;
+		rc = libzfs_run_process(argv[0], argv, 0);
+		if (rc < 0)
+			return SA_SYSTEM_ERR;
+	}
 
 	/* ====== */
 	/* Reload the share file */
@@ -649,6 +652,12 @@ static const sa_share_ops_t iscsi_shareops = {
 static boolean_t
 iscsi_available(void)
 {
+	if (access(IETM_CMD_PATH, X_OK) != 0)
+		return B_FALSE;
+
+	if (access(PROC_IET_VOLUME, F_OK) != 0)
+		return B_FALSE;
+
 	return B_TRUE;
 }
 
