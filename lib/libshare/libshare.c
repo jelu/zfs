@@ -36,16 +36,6 @@
 #include <libshare.h>
 #include "libshare_impl.h"
 #include "nfs.h"
-#include "iscsi.h"
-
-#ifndef TRUE
-#define TRUE 1
-#endif
-
-#ifndef FALSE
-#define FALSE 0
-#endif
-
 #include "smb.h"
 #include "iscsi.h"
 
