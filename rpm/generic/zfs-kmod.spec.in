@@ -3,12 +3,14 @@
 %bcond_with     debug
 %bcond_with     debug_dmu_tx
 
-
 Name:           %{module}-kmod
 
 Version:        @VERSION@
 Release:        @RELEASE@%{?dist}
 Summary:        Kernel module(s)
+
+%define spl	@SPL@
+%define ksrc	@LINUX@
 
 Group:          System Environment/Kernel
 License:        @ZFS_META_LICENSE@
@@ -90,15 +92,10 @@ for kernel_version in %{?kernel_versions}; do
         --with-linux="${kernel_version##*___}" \
         --with-linux-obj="${kernel_version##*___}" \
 %else
-        --with-linux=\
-        %(if [ -e /lib/modules/${kernel_version%%___*}/source ]; then \
-            echo "/lib/modules/${kernel_version%%___*}/source" \
-        else \
-            echo "/lib/modules/${kernel_version%%___*}/build" \
-        fi) \
-        --with-linux-obj="/lib/modules/${kernel_version%%___*}/build" \
+        --with-linux=%{ksrc} \
+        --with-linux-obj=%{ksrc} \
 %endif
-        --with-spl="/usr/src/spl-%{version}" \
+	--with-spl=%{spl} \
         %{debug} \
         %{debug_dmu_tx}
     make %{?_smp_mflags}
