@@ -343,7 +343,6 @@ next:
 		target->blocksize = atoi(blocksize);
 		strncpy(target->path, path, sizeof (target->path));
 
-fprintf(stderr, "  ");
 #ifdef DEBUG
 		fprintf(stderr, "    iscsi_retrieve_targets: target=%s, tid=%d, path=%s\n",
 			target->name, target->tid, target->path);
@@ -382,7 +381,6 @@ iscsi_enable_share_one(int tid, char *sharename, const char *sharepath,
 	char params_name[255], params_path[255], tid_s[11];
 	int rc;
 
-fprintf(stderr, "  ");
 #ifdef DEBUG
 	fprintf(stderr, "iscsi_enable_share_one: tid=%d, sharename=%s, sharepath=%s, iotype=%s\n",
 		tid, sharename, sharepath, iotype);
@@ -491,8 +489,6 @@ iscsi_disable_share_one(int tid)
 	char tid_s[11];
 	int rc;
 
-fprintf(stderr, "iscsi_disable_share_one: tid=%d\n", tid);
-
 	/* int: between -2,147,483,648 and 2,147,483,647 => 10 chars + NUL */
 	snprintf(tid_s, sizeof (tid_s), "%d", tid);
 
@@ -529,7 +525,6 @@ iscsi_disable_share(sa_share_impl_t impl_share)
 	iscsi_retrieve_targets();
 
 	while (iscsi_targets != NULL) {
-fprintf(stderr, "iscsi_disable_share: strcmp(%s, %s)\n", impl_share->sharepath, iscsi_targets->path);
 		if (strcmp(impl_share->sharepath, iscsi_targets->path) == 0)
 			return iscsi_disable_share_one(iscsi_targets->tid);
 
@@ -566,7 +561,6 @@ iscsi_is_share_active(sa_share_impl_t impl_share)
 	iscsi_retrieve_targets();
 
 	while (iscsi_targets != NULL) {
-fprintf(stderr, "  iscsi_is_share_active: strcmp(%s, %s)\n", impl_share->sharepath, iscsi_targets->path);
 		if (strcmp(impl_share->sharepath, iscsi_targets->path) == 0)
 			return B_TRUE;
 
@@ -595,7 +589,6 @@ iscsi_update_shareopts(sa_share_impl_t impl_share, const char *resource,
 	if(!impl_share && !impl_share->dataset)
 		return SA_SYSTEM_ERR;
 
-fprintf(stderr, "    ");
 #ifdef DEBUG
 	fprintf(stderr, "iscsi_update_shareopts: share=%s, active=%d, old_shareopts=%s\n",
 		impl_share->dataset,

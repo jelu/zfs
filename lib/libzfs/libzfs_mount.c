@@ -927,7 +927,6 @@ unshare_one(libzfs_handle_t *hdl, const char *name, const char *mountpoint,
 	free(mntpt);	/* don't need the copy anymore */
 
 	if (share != NULL) {
-fprintf(stderr, "unshare_one: share != NULL\n");
 		err = sa_disable_share(share, proto_table[proto].p_name);
 		if (err != SA_OK) {
 			return (zfs_error_fmt(hdl, EZFS_UNSHARENFSFAILED,
@@ -935,7 +934,6 @@ fprintf(stderr, "unshare_one: share != NULL\n");
 			    name, sa_errorstr(err)));
 		}
 	} else {
-fprintf(stderr, "unshare_one: share == NULL\n");
 		return (zfs_error_fmt(hdl, EZFS_UNSHARENFSFAILED,
 		    dgettext(TEXT_DOMAIN, "cannot unshare '%s': not found"),
 		    name));
