@@ -66,16 +66,16 @@ AC_DEFUN([ZFS_AC_META], [
 			AC_SUBST([ZFS_META_VERSION])
 		fi
 
-		ZFS_META_RELEASE=_ZFS_AC_META_GETVAL([RELEASE]);
-		if git rev-parse --git-dir > /dev/null 2>&1; then
-			_match="${ZFS_META_NAME}-${ZFS_META_VERSION}*"
-			_alias=$(git describe --match=${_match} 2>/dev/null)
-			_release=$(echo ${_alias}|cut -f3- -d'-'|sed 's/-/_/g')
-			if test -n "${_release}"; then
-				ZFS_META_RELEASE=${_release}
-				_zfs_ac_meta_type="git describe"
-			fi
-		fi
+		ZFS_META_RELEASE=`perl -n\
+		-e "BEGIN { \\$key=shift @ARGV; }"\
+		-e "next unless s/^\s*\\$key[:=]//i;"\
+		-e "s/^((?:[^'\"#]*(?:(['\"])[^\2]*\2)*)*)#.*/\\$1/;"\
+		-e "s/^\s+//;"\
+		-e "s/\s+$//;"\
+		-e "s/^(['\"])(.*)\1/\\$2/;"\
+		-e "\\$val=\\$_;"\
+		-e "END { print \\$val if defined \\$val; }"\
+		'RELEASE' $META`;
 
 		if test -n "$ZFS_META_RELEASE"; then
 			AC_DEFINE_UNQUOTED([ZFS_META_RELEASE], ["$ZFS_META_RELEASE"],
