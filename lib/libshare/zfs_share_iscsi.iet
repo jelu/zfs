@@ -1,0 +1,13 @@
+#!/bin/sh
+
+# !! This script is for iSCSI-IET !!
+
+if [ -z "$1" ]; then
+    echo "Usage: `basename $0` [tid]"
+    exit 1
+fi
+
+tid=$1
+
+ietadm --op update --tid $tid --params \
+    MaxRecvDataSegmentLength=262144,MaxXmitDataSegmentLength=65536
