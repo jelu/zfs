@@ -54,3 +54,6 @@ Makefile.in
 tags
 TAGS
 cscope.*
+*.rpm
+*.deb
+*.tar.gz
