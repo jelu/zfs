@@ -525,8 +525,13 @@ iscsi_disable_share(sa_share_impl_t impl_share)
 	iscsi_retrieve_targets();
 
 	while (iscsi_targets != NULL) {
-		if (strcmp(impl_share->sharepath, iscsi_targets->path) == 0)
+		if (strcmp(impl_share->sharepath, iscsi_targets->path) == 0) {
+#ifdef DEBUG
+			fprintf(stderr, "iscsi_disable_share: target=%s, tid=%d, path=%s\n",
+				iscsi_targets->name, iscsi_targets->tid, iscsi_targets->path);
+#endif
 			return iscsi_disable_share_one(iscsi_targets->tid);
+		}
 
 		iscsi_targets = iscsi_targets->next;
 	}
@@ -543,6 +548,10 @@ iscsi_disable_share_all(void)
 	iscsi_retrieve_targets();
 
 	while (iscsi_targets != NULL) {
+#ifdef DEBUG
+		fprintf(stderr, "iscsi_disable_share_all: target=%s, tid=%d, path=%s\n",
+			iscsi_targets->name, iscsi_targets->tid, iscsi_targets->path);
+#endif
 		rc += iscsi_disable_share_one(iscsi_targets->tid);
 
 		iscsi_targets = iscsi_targets->next;
