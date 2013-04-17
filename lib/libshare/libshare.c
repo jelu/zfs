@@ -39,14 +39,6 @@
 #include "smb.h"
 #include "iscsi.h"
 
-#ifndef TRUE
-#define TRUE 1
-#endif
-
-#ifndef FALSE
-#define FALSE 0
-#endif
-
 static sa_share_impl_t find_share(sa_handle_impl_t handle,
     const char *sharepath);
 static sa_share_impl_t alloc_share(const char *sharepath);
@@ -268,6 +260,14 @@ update_zfs_shares_cb(zfs_handle_t *zhp, void *pcookie)
 		return 0;
 	}
 
+	if (type == ZFS_TYPE_VOLUME) {
+		/* TODO: check whether this is sane */
+		if (sprintf(mountpoint, "/dev/zvol/%s", zfs_get_name(zhp)) < 0) {
+			zfs_close(zhp);
+			return 0;
+		}
+	}
+
 	dataset = (char *)zfs_get_name(zhp);
 
 	if (dataset == NULL) {
@@ -364,7 +364,7 @@ process_share(sa_handle_impl_t impl_handle, sa_share_impl_t impl_share,
 
 	new_share = B_FALSE;
 
-	if (impl_share == NULL)
+	if (impl_share == NULL && strlen(pathname))
 		impl_share = find_share(impl_handle, pathname);
 
 	if (impl_share == NULL) {
@@ -441,7 +441,6 @@ process_share(sa_handle_impl_t impl_handle, sa_share_impl_t impl_share,
 
 		impl_share->next = impl_handle->shares;
 		impl_handle->shares = impl_share;
-
 	}
 
 err:
@@ -509,9 +508,8 @@ find_share(sa_handle_impl_t impl_handle, const char *sharepath)
 
 	impl_share = impl_handle->shares;
 	while (impl_share != NULL) {
-		if (strcmp(impl_share->sharepath, sharepath) == 0) {
+		if (strcmp(impl_share->sharepath, sharepath) == 0)
 			break;
-		}
 
 		impl_share = impl_share->next;
 	}

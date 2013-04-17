@@ -44,7 +44,7 @@ check_shares() {
 }
 
 test_header() {
-	echo "TEST: $*"
+	printf "TEST: %s\n" "$*"
 	echo "======================================"
 }
 
@@ -58,16 +58,18 @@ run() {
 # ---------
 # Needs more work...
 if echo "$*" | grep -qi "unpack"; then
+	[ ! -c /dev/zfs ] && modprobe zfs
+
 	zfs unmount -a
 	zfs unshare -a
 	run "zfs destroy -r $BASETANK/tests"
 
 	sh /etc/init.d/zfs stop
 
-#	for tid in `grep ^tid /proc/net/iet/volume | sed "s@.*:\([0-9].*\) name.*@\1@"`
-#	do
-#		ietadm --op delete --tid $tid
-#	done
+	for tid in `grep ^tid /proc/net/iet/volume | sed "s@.*:\([0-9].*\) name.*@\1@"`
+	do
+		ietadm --op delete --tid $tid
+	done
 
 	set -e
 	rmmod `lsmod | grep ^z | grep -v zlib_deflate | sed 's@ .*@@'` spl zlib_deflate
@@ -119,7 +121,7 @@ fi
 
 # ---------
 if echo "$*" | egrep -qi "iscsi|all"; then
-	test_header "Unshare + Share all"
+	test_header "Share + Unshareall"
 
 	run "zfs share -a" ; check_shares
 	run "zfs unshare -a" ; check_shares
@@ -147,7 +149,7 @@ if echo "$*" | grep -qi "snapshot|all"; then
 fi
 
 if echo "$*" | egrep -qi "iscsi|snapshot|all"; then
-	test_header "Cleanup (Share all + Destroy all)"
+	test_header "Cleanup (Share + Destroy all)"
 
 	run "zfs share -a"
 	check_shares

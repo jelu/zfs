@@ -144,10 +144,11 @@ changelist_prefix(prop_changelist_t *clp)
 }
 
 /*
- * If the property is 'mountpoint' or 'sharenfs', go through and remount and/or
- * reshare the filesystems as necessary.  In changelist_gather() we recorded
- * whether the filesystem was previously shared or mounted.  The action we take
- * depends on the previous state, and whether the value was previously 'legacy'.
+ * If the property is 'mountpoint', 'sharenfs' or 'sharesmb', go through and
+ * remount and/or reshare the filesystems as necessary.  In changelist_gather()
+ * we recorded whether the filesystem was previously shared or mounted.  The
+ * action we take depends on the previous state, and whether the value was
+ * previously 'legacy'. 
  * For non-legacy properties, we only remount/reshare the filesystem if it was
  * previously mounted/shared.  Otherwise, we always remount/reshare the
  * filesystem.
