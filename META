@@ -2,7 +2,7 @@ Meta:         1
 Name:         zfs
 Branch:       1.0
 Version:      0.6.1
-Release:      1.20130417.iscsi.crypto
+Release:      1.20130417.iscsi.crypto+mine
 Release-Tags: relext
 License:      CDDL
 Author:       Sun Microsystems/Oracle, Lawrence Livermore National Laboratory
