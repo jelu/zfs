@@ -498,12 +498,8 @@ iscsi_disable_share_one(int tid)
 	rc = libzfs_run_process(argv[0], argv, 0);
 	if (rc < 0)
 		return SA_SYSTEM_ERR;
-	else {
-		/* Reload the share file */
-		iscsi_retrieve_targets();
-
+	else
 		return SA_OK;
-	}
 }
 
 static int
