@@ -329,8 +329,6 @@ do_unmount(const char *mntpt, int flags)
 	    NULL, NULL, NULL, NULL };
 	int rc, count = 3;
 
-// xxx
-fprintf(stderr, "do_unmount: mntpt=%s, flags=%d\n", mntpt, flags);
 	if (flags & MS_FORCE) {
 		argv[count] = force_opt;
 		count++;
