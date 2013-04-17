@@ -144,10 +144,11 @@ changelist_prefix(prop_changelist_t *clp)
 }
 
 /*
- * If the property is 'mountpoint' or 'sharenfs', go through and remount and/or
- * reshare the filesystems as necessary.  In changelist_gather() we recorded
- * whether the filesystem was previously shared or mounted.  The action we take
- * depends on the previous state, and whether the value was previously 'legacy'.
+ * If the property is 'mountpoint', 'sharenfs' or 'sharesmb', go through and
+ * remount and/or reshare the filesystems as necessary.  In changelist_gather()
+ * we recorded whether the filesystem was previously shared or mounted.  The
+ * action we take depends on the previous state, and whether the value was
+ * previously 'legacy'. 
  * For non-legacy properties, we only remount/reshare the filesystem if it was
  * previously mounted/shared.  Otherwise, we always remount/reshare the
  * filesystem.
@@ -195,7 +196,6 @@ changelist_postfix(prop_changelist_t *clp)
 
 		boolean_t sharenfs;
 		boolean_t sharesmb;
-		boolean_t shareiscsi;
 		boolean_t mounted;
 
 		/*
@@ -227,14 +227,10 @@ changelist_postfix(prop_changelist_t *clp)
 		    shareopts, sizeof (shareopts), NULL, NULL, 0,
 		    B_FALSE) == 0) && (strcmp(shareopts, "off") != 0));
 
-		shareiscsi = ((zfs_prop_get(cn->cn_handle, ZFS_PROP_SHAREISCSI,
-		    shareopts, sizeof (shareopts), NULL, NULL, 0,
-		    B_FALSE) == 0) && (strcmp(shareopts, "off") != 0));
-
 		mounted = zfs_is_mounted(cn->cn_handle, NULL);
 
 		if (!mounted && (cn->cn_mounted ||
-		    ((sharenfs || sharesmb || shareiscsi || clp->cl_waslegacy) &&
+		    ((sharenfs || sharesmb || clp->cl_waslegacy) &&
 		    (zfs_prop_get_int(cn->cn_handle,
 		    ZFS_PROP_CANMOUNT) == ZFS_CANMOUNT_ON)))) {
 
@@ -257,10 +253,6 @@ changelist_postfix(prop_changelist_t *clp)
 			errors += zfs_share_smb(cn->cn_handle);
 		else if (cn->cn_shared || clp->cl_waslegacy)
 			errors += zfs_unshare_smb(cn->cn_handle, NULL);
-		if (shareiscsi && mounted)
-			errors += zfs_share_iscsi(cn->cn_handle);
-		else if (cn->cn_shared || clp->cl_waslegacy)
-			errors += zfs_unshare_iscsi(cn->cn_handle, NULL);
 	}
 
 	return (errors ? -1 : 0);
