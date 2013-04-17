@@ -344,7 +344,7 @@ next:
 		strncpy(target->path, path, sizeof (target->path));
 
 #ifdef DEBUG
-		fprintf(stderr, "    iscsi_retrieve_targets: target=%s, tid=%d, path=%s\n",
+		fprintf(stderr, "iscsi_retrieve_targets: target=%s, tid=%d, path=%s\n",
 			target->name, target->tid, target->path);
 #endif
 		
@@ -438,10 +438,6 @@ iscsi_enable_share_one(int tid, char *sharename, const char *sharepath,
 		if (rc < 0)
 			return SA_SYSTEM_ERR;
 	}
-
-	/* ====== */
-	/* Reload the share file */
-	iscsi_retrieve_targets();
 
 	return SA_OK;
 }
@@ -570,7 +566,12 @@ iscsi_is_share_active(sa_share_impl_t impl_share)
 	iscsi_retrieve_targets();
 
 	while (iscsi_targets != NULL) {
-		if (strcmp(impl_share->sharepath, iscsi_targets->path) == 0)
+#ifdef DEBUG
+		fprintf(stderr, "iscsi_is_share_active: %s ?? %s\n",
+			iscsi_targets->path, impl_share->sharepath);
+#endif
+
+		if (strcmp(iscsi_targets->path, impl_share->sharepath) == 0)
 			return B_TRUE;
 
 		iscsi_targets = iscsi_targets->next;
@@ -584,6 +585,7 @@ iscsi_validate_shareopts(const char *shareopts)
 {
 	if ((strcmp(shareopts, "off") == 0) || (strcmp(shareopts, "on") == 0))
 		return SA_OK;
+
 	return SA_SYNTAX_ERR;
 }
 
@@ -595,14 +597,13 @@ iscsi_update_shareopts(sa_share_impl_t impl_share, const char *resource,
 	boolean_t needs_reshare = B_FALSE;
 	char *old_shareopts;
 
-	if(!impl_share && !impl_share->dataset)
+	if(!impl_share)
 		return SA_SYSTEM_ERR;
 
 #ifdef DEBUG
-	fprintf(stderr, "iscsi_update_shareopts: share=%s, active=%d, old_shareopts=%s\n",
-		impl_share->dataset,
-		FSINFO(impl_share, iscsi_fstype)->active,
-		FSINFO(impl_share, iscsi_fstype)->shareopts);
+	fprintf(stderr, "iscsi_update_shareopts: share=%s;%s, active=%d, old_shareopts=%s\n",
+		impl_share->dataset, impl_share->sharepath, FSINFO(impl_share, iscsi_fstype)->active,
+		FSINFO(impl_share, iscsi_fstype)->shareopts ? NULL : "null");
 #endif
 
 	FSINFO(impl_share, iscsi_fstype)->active =
