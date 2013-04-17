@@ -66,16 +66,7 @@ AC_DEFUN([ZFS_AC_META], [
 			AC_SUBST([ZFS_META_VERSION])
 		fi
 
-		ZFS_META_RELEASE=`perl -n\
-		-e "BEGIN { \\$key=shift @ARGV; }"\
-		-e "next unless s/^\s*\\$key[:=]//i;"\
-		-e "s/^((?:[^'\"#]*(?:(['\"])[^\2]*\2)*)*)#.*/\\$1/;"\
-		-e "s/^\s+//;"\
-		-e "s/\s+$//;"\
-		-e "s/^(['\"])(.*)\1/\\$2/;"\
-		-e "\\$val=\\$_;"\
-		-e "END { print \\$val if defined \\$val; }"\
-		'RELEASE' $META`;
+		ZFS_META_RELEASE=_ZFS_AC_META_GETVAL([Release]);
 
 		if test -n "$ZFS_META_RELEASE"; then
 			AC_DEFINE_UNQUOTED([ZFS_META_RELEASE], ["$ZFS_META_RELEASE"],
