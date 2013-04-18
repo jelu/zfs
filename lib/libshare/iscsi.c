@@ -408,7 +408,7 @@ iscsi_enable_share_one(int tid, char *sharename, const char *sharepath,
 	argv[6] = params_name;
 	argv[7] = NULL;
 
-	rc = libzfs_run_process(argv[0], argv, 0);
+	rc = libzfs_run_process(argv[0], argv, STDERR_VERBOSE);
 	if (rc < 0)
 		return SA_SYSTEM_ERR;
 
@@ -423,7 +423,7 @@ iscsi_enable_share_one(int tid, char *sharename, const char *sharepath,
 	argv[8] = params_path;
 	argv[9] = NULL;
 
-	rc = libzfs_run_process(argv[0], argv, 0);
+	rc = libzfs_run_process(argv[0], argv, STDERR_VERBOSE);
 	if (rc < 0)
 		return SA_SYSTEM_ERR;
 
@@ -434,7 +434,7 @@ iscsi_enable_share_one(int tid, char *sharename, const char *sharepath,
 		argv[1] = tid_s;
 		argv[2] = NULL;
 
-		rc = libzfs_run_process(argv[0], argv, 0);
+		rc = libzfs_run_process(argv[0], argv, STDERR_VERBOSE);
 		if (rc < 0)
 			return SA_SYSTEM_ERR;
 	}
@@ -495,7 +495,7 @@ iscsi_disable_share_one(int tid)
 	argv[4] = tid_s;
 	argv[5] = NULL;
 
-	rc = libzfs_run_process(argv[0], argv, 0);
+	rc = libzfs_run_process(argv[0], argv, STDERR_VERBOSE);
 	if (rc < 0)
 		return SA_SYSTEM_ERR;
 	else
