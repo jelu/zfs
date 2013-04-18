@@ -38,12 +38,21 @@
 typedef struct smb_share_s {
 	char name[SMB_NAME_MAX];	/* Share name */
 	char path[PATH_MAX];		/* Share path */
-	char comment[SMB_COMMENT_MAX];	/* Share's comment */
+
+	char comment[SMB_COMMENT_MAX];	/* Share comment */
+	char acl[255];			/* Share ACL */
 	boolean_t guest_ok;		/* 'y' or 'n' */
 
 	struct smb_share_s *next;
 } smb_share_t;
 
 smb_share_t *smb_shares;
+
+typedef struct smb_shareopts_s {
+	char name[SMB_NAME_MAX];
+	char comment[SMB_COMMENT_MAX];
+	char acl[255];
+	boolean_t guest_ok;
+} smb_shareopts_t;
 
 void libshare_smb_init(void);
