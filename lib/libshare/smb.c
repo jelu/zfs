@@ -201,7 +201,7 @@ static int
 get_smb_shareopts_cb(const char *key, const char *value, void *cookie)
 {
 	char *dup_value;
-	smb_shareopts_t *opts = (smb_shareopts_t *)cookie;
+	smb_share_t *opts = (smb_share_t *)cookie;
 
 	/* guest_ok and guestok is the same */
 	if (strcmp(key, "guestok") == 0)
@@ -251,17 +251,17 @@ get_smb_shareopts_cb(const char *key, const char *value, void *cookie)
  */
 static int
 get_smb_shareopts(sa_share_impl_t impl_share, const char *shareopts,
-		  smb_shareopts_t **opts)
+		  smb_share_t **opts)
 {
 	char *pos, name[SMB_NAME_MAX];
 	int rc;
-	smb_shareopts_t *new_opts;
+	smb_share_t *new_opts;
 
 	assert(opts != NULL);
 	*opts = NULL;
 
 	/* Set defaults */
-	new_opts = (smb_shareopts_t *) malloc(sizeof (smb_shareopts_t));
+	new_opts = (smb_share_t *) malloc(sizeof (smb_share_t));
 	if (new_opts == NULL)
 		return SA_NO_MEMORY;
 
@@ -318,7 +318,7 @@ smb_enable_share_one(sa_share_impl_t impl_share, const char *dataset,
 		     const char *sharepath)
 {
 	char *argv[11], *shareopts;
-	smb_shareopts_t *opts;
+	smb_share_t *opts;
 	int rc;
 
 #ifdef DEBUG
@@ -326,7 +326,7 @@ smb_enable_share_one(sa_share_impl_t impl_share, const char *dataset,
 		dataset, sharepath);
 #endif
 
-	opts = (smb_shareopts_t *) malloc(sizeof (smb_shareopts_t));
+	opts = (smb_share_t *) malloc(sizeof (smb_share_t));
 	if (opts == NULL)
 		return SA_NO_MEMORY;
 
@@ -441,11 +441,10 @@ smb_disable_share(sa_share_impl_t impl_share)
 static int
 smb_validate_shareopts(const char *shareopts)
 {
-	smb_shareopts_t *opts;
+	smb_share_t *opts;
 	int rc = SA_OK;
 
 	rc = get_smb_shareopts(NULL, shareopts, &opts);
-	rc, opts->name, opts->comment, opts->acl, opts->guest_ok);
 
 	return rc;
 }
