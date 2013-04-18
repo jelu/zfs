@@ -236,7 +236,9 @@ get_smb_shareopts_cb(const char *key, const char *value, void *cookie)
 	}
 
 	if (strcmp(key, "guest_ok") == 0) {
-		if(strcmp(dup_value, "y") == 0)
+		if(strcmp(dup_value, "y") == 0 ||
+		   strcmp(dup_value, "yes") == 0 ||
+		   strcmp(dup_value, "true") == 0)
 			opts->guest_ok = B_TRUE;
 		else
 			opts->guest_ok = B_FALSE;
@@ -286,14 +288,12 @@ get_smb_shareopts(sa_share_impl_t impl_share, const char *shareopts,
 		strncpy(new_opts->name, name, strlen(name));
 		new_opts->name [sizeof (new_opts->name)-1] = '\0';
 	} else
-		//memset(&new_opts->name[0], 0, sizeof(new_opts->name));
 		new_opts->name[0] = '\0';
 
 	if (impl_share && impl_share->sharepath)
 		snprintf(new_opts->comment, sizeof(new_opts->comment),
 			 "Comment: %s", impl_share->sharepath);
 	else
-		//memset(&new_opts->comment[0], 0, sizeof(new_opts->comment));
 		new_opts->comment[0] = '\0';
 
 	strncpy(new_opts->acl, "Everyone:f", 11); // must be 'r', 'f', or 'd'
