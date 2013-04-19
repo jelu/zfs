@@ -73,7 +73,7 @@ static sa_fstype_t *iscsi_fstype;
  *
  * => iqn.yyyy-mm.tld.domain:path
  */
-int
+static int
 iscsi_generate_target(const char *path, char *iqn, size_t iqn_len)
 {
 	char tsbuf[8]; /* YYYY-MM */
@@ -373,28 +373,186 @@ out:
 	return rc;
 }
 
-int
-iscsi_enable_share_one(int tid, char *sharename, const char *sharepath,
-    const char *iotype)
+/**
+ * Validates share option(s).
+ */
+static int
+iscsi_get_shareopts_cb(const char *key, const char *value, void *cookie)
 {
-	char *argv[10];
-	char params_name[255], params_path[255], tid_s[11];
+	char *dup_value;
+	int lun;
+	iscsi_shareopts_t *opts = (iscsi_shareopts_t *)cookie;
+
+	if (strcmp(key, "on") == 0)
+		return SA_OK;
+
+	/* iqn is an alias to name */
+	if (strcmp(key, "iqn") == 0)
+		key = "name";
+
+	/* Verify all options */
+	if (strcmp(key, "name") != 0 &&
+	    strcmp(key, "lun") != 0 &&
+	    strcmp(key, "type") != 0 &&
+	    strcmp(key, "iomode") != 0 &&
+	    strcmp(key, "blocksize") != 0)
+		return SA_SYNTAX_ERR;
+
+
+	dup_value = strdup(value);
+	if (dup_value == NULL)
+		return SA_NO_MEMORY;
+
+	/* Get share option values */
+	if (strcmp(key, "name") == 0) {
+		strncpy(opts->name, dup_value, sizeof (opts->name));
+		opts->name [sizeof(opts->name)-1] = '\0';
+	}
+
+	if (strcmp(key, "type") == 0) {
+		/* Make sure it's a valid type value */
+		if (strcmp(dup_value, "fileio") != 0 &&
+		    strcmp(dup_value, "blockio") != 0 &&
+		    strcmp(dup_value, "nullio") != 0 &&
+		    strcmp(dup_value, "disk") != 0 &&
+		    strcmp(dup_value, "tape") != 0)
+			return SA_SYNTAX_ERR;
+
+		/**
+		 * The *Solaris options 'disk' (and future 'tape')
+		 * isn't availible in ietadm. It _seems_ that 'fileio'
+		 * is the Linux version.
+		 */
+		if (strcmp(dup_value, "disk") == 0 ||
+		    strcmp(dup_value, "tape") == 0)
+			strncpy(dup_value, "fileio", 10);
+
+		strncpy(opts->type, dup_value, sizeof (opts->type));
+		opts->type [sizeof(opts->type)-1] = '\0';
+	}
+
+	if (strcmp(key, "iomode") == 0) {
+		/* Make sure it's a valid iomode */
+		if (strcmp(dup_value, "wb") != 0 &&
+		    strcmp(dup_value, "ro") != 0 &&
+		    strcmp(dup_value, "wt") != 0)
+			return SA_SYNTAX_ERR;
+
+		if (strcmp(opts->type, "blockio") == 0 &&
+		    strcmp(dup_value, "wb") == 0)
+			/* Can't do write-back cache with blockio */
+			strncpy(dup_value, "wt", 3);
+
+		strncpy(opts->iomode, dup_value, sizeof (opts->iomode));
+		opts->iomode [sizeof(opts->iomode)-1] = '\0';
+	}
+
+	if (strcmp(key, "lun") == 0) {
+		lun = atoi(dup_value);
+		if (lun >= 0 && lun <= 16384)
+			opts->lun = lun;
+		else
+			return SA_SYNTAX_ERR;
+	}
+
+	if (strcmp(key, "blocksize") == 0) {
+		/* Make sure it's a valid blocksize */
+		if (strcmp(dup_value, "512")  != 0 &&
+		    strcmp(dup_value, "1024") != 0 &&
+		    strcmp(dup_value, "2048") != 0 &&
+		    strcmp(dup_value, "4096") != 0)
+			return SA_SYNTAX_ERR;
+
+		opts->blocksize = atoi(dup_value);
+	}
+
+	return SA_OK;
+}
+
+/**
+ * Takes a string containing share options (e.g. "name=Whatever,lun=3")
+ * and converts them to a NULL-terminated array of options.
+ */
+static int
+iscsi_get_shareopts(sa_share_impl_t impl_share, const char *shareopts,
+		    iscsi_shareopts_t **opts)
+{
+	char iqn[255];
+	int rc;
+	iscsi_shareopts_t *new_opts;
+
+	assert(opts != NULL);
+	*opts = NULL;
+
+	/* Set defaults */
+	new_opts = (iscsi_shareopts_t *) malloc(sizeof (iscsi_shareopts_t));
+	if (new_opts == NULL)
+		return SA_NO_MEMORY;
+
+	if (impl_share && impl_share->dataset) {
+		if (iscsi_generate_target(impl_share->dataset, iqn,
+					  sizeof (iqn)) < 0)
+			return SA_SYSTEM_ERR;
+
+		strncpy(new_opts->name, iqn, strlen(iqn));
+		new_opts->name [sizeof (new_opts->name)-1] = '\0';
+	} else
+		new_opts->name[0] = '\0';
+
+	strncpy(new_opts->iomode, "wt", 3);
+	strncpy(new_opts->type, "fileio", 10);
+	new_opts->lun = 0;
+	new_opts->blocksize = 512;
+	*opts = new_opts;
+
+	rc = foreach_shareopt(shareopts, iscsi_get_shareopts_cb, *opts);
+	if (rc != SA_OK) {
+		free(*opts);
+		*opts = NULL;
+	}
+
+	return rc;
+}
+
+static int
+iscsi_enable_share_one(sa_share_impl_t impl_share, int tid)
+{
+	char *argv[10], params_name[255], params[255], tid_s[11];
+	char *shareopts;
+	iscsi_shareopts_t *opts;
 	int rc;
 
 #ifdef DEBUG
-	fprintf(stderr, "iscsi_enable_share_one: tid=%d, sharename=%s, sharepath=%s, iotype=%s\n",
-		tid, sharename, sharepath, iotype);
+	fprintf(stderr, "iscsi_enable_share_one: tid=%d, sharepath=%s\n",
+		tid, impl_share->sharepath);
+#endif
+
+	opts = (iscsi_shareopts_t *) malloc(sizeof (iscsi_shareopts_t));
+	if (opts == NULL)
+		return SA_NO_MEMORY;
+
+	/* Get any share options */
+	shareopts = FSINFO(impl_share, iscsi_fstype)->shareopts;
+	rc = iscsi_get_shareopts(impl_share, shareopts, &opts);
+	if (rc < 0) {
+		free(opts);
+		return SA_SYSTEM_ERR;
+	}
+
+#ifdef DEBUG
+	fprintf(stderr, "iscsi_enable_share_one: name=%s, iomode=%s, type=%s, lun=%d, blocksize=%d\n",
+		opts->name, opts->iomode, opts->type, opts->lun, opts->blocksize);
 #endif
 
 	/*
 	 * ietadm --op new --tid $next --params Name=$iqn
 	 * ietadm --op new --tid $next --lun=0 --params \
-	 *   Path=/dev/zvol/$sharepath,Type=$iotype
+	 *   Path=/dev/zvol/$sharepath,Type=<fileio|blockio|nullio>
 	 */
 
 	/* ====== */
 	/* PART 1 - do the (inital) share. No path etc... */
-	snprintf(params_name, sizeof (params_name), "Name=%s", sharename);
+	snprintf(params_name, sizeof (params_name), "Name=%s", opts->name);
 
 	/* int: between -2,147,483,648 and 2,147,483,647 => 10 chars + NUL */
 	snprintf(tid_s, sizeof(tid_s), "%d", tid);
@@ -414,13 +572,15 @@ iscsi_enable_share_one(int tid, char *sharename, const char *sharepath,
 
 	/* ====== */
 	/* PART 2 - Set share path and lun. */
-	snprintf(params_path, sizeof (params_path),
-		 "Path=%s,Type=%s", sharepath, iotype);
+	snprintf(params, sizeof (params),
+		 "Path=%s,Type=%s,iomode=%s,BlockSize=%d",
+		 impl_share->sharepath, opts->type, opts->iomode,
+		 opts->blocksize);
 
 	argv[5] = (char*)"--lun";
-	argv[6] = (char*)"0";
+	snprintf(argv[6], sizeof(argv[6]), "%d", opts->lun);
 	argv[7] = (char*)"--params";
-	argv[8] = params_path;
+	argv[8] = params;
 	argv[9] = NULL;
 
 	rc = libzfs_run_process(argv[0], argv, STDERR_VERBOSE);
@@ -446,22 +606,17 @@ static int
 iscsi_enable_share(sa_share_impl_t impl_share)
 {
 	char *shareopts;
-	char iqn[255];
 	int tid = 0;
 
 	if (!iscsi_available())
 		return SA_SYSTEM_ERR;
 
 	shareopts = FSINFO(impl_share, iscsi_fstype)->shareopts;
-
 	if (shareopts == NULL) /* on/off */
 		return SA_SYSTEM_ERR;
 
 	if (strcmp(shareopts, "off") == 0)
 		return SA_OK;
-
-	if (iscsi_generate_target(impl_share->dataset, iqn, sizeof (iqn)) < 0)
-		return SA_SYSTEM_ERR;
 
 	/* Retreive the list of (possible) active shares */
 	iscsi_retrieve_targets();
@@ -474,11 +629,10 @@ iscsi_enable_share(sa_share_impl_t impl_share)
 	tid++; /* Next TID is/should be availible */
 
 	/* Magic: Enable (i.e., 'create new') share */
-	return iscsi_enable_share_one(tid, iqn,
-	    impl_share->sharepath, "fileio");
+	return iscsi_enable_share_one(impl_share, tid);
 }
 
-int
+static int
 iscsi_disable_share_one(int tid)
 {
 	char *argv[6];
@@ -579,10 +733,12 @@ iscsi_is_share_active(sa_share_impl_t impl_share)
 static int
 iscsi_validate_shareopts(const char *shareopts)
 {
-	if ((strcmp(shareopts, "off") == 0) || (strcmp(shareopts, "on") == 0))
-		return SA_OK;
+	iscsi_shareopts_t *opts;
+	int rc = SA_OK;
 
-	return SA_SYNTAX_ERR;
+	rc = iscsi_get_shareopts(NULL, shareopts, &opts);
+
+	return rc;
 }
 
 static int

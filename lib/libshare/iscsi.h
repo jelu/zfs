@@ -30,6 +30,19 @@
 #define TARGET_NAME_FILE "/etc/iscsi_target_id"
 #define EXTRA_SHARE_SCRIPT "/sbin/zfs_share_iscsi"
 
+/**
+ * tid:1 name:iqn.2012-11.com.bayour:share.VirtualMachines.Ubuntu.Maverick.Desktop
+ *	lun:0 state:0 iotype:fileio iomode:wt blocks:31457280 blocksize:512 \
+ *	path:/dev/zvol/share/VirtualMachines/Ubuntu/Maverick/Desktop
+ */
+typedef struct iscsi_shareopts_s {
+	char	name[255];	/* Target IQN name */
+	int	lun;		/* LUN number */
+	char	type[10];	/* disk or tape */
+	char	iomode[3];	/* wb, ro or wt */
+	int	blocksize;	/* 512, 1024, 2048 or 4096 */
+} iscsi_shareopts_t;
+
 typedef struct iscsi_target_s {
         int     tid;            /* Target ID */
         char    name[255];      /* Target Name */
@@ -47,7 +60,4 @@ typedef struct iscsi_target_s {
 iscsi_target_t *iscsi_targets;
 
 void libshare_iscsi_init(void);
-int iscsi_generate_target(const char *, char *, size_t);
-int iscsi_enable_share_one(int, char *, const char *, const char *);
-int iscsi_disable_share_one(int);
 int iscsi_disable_share_all(void);
