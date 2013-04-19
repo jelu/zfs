@@ -198,7 +198,7 @@ out:
  * Validates share option(s).
  */
 static int
-get_smb_shareopts_cb(const char *key, const char *value, void *cookie)
+smb_get_shareopts_cb(const char *key, const char *value, void *cookie)
 {
 	char *dup_value;
 	smb_share_t *opts = (smb_share_t *)cookie;
@@ -255,7 +255,7 @@ get_smb_shareopts_cb(const char *key, const char *value, void *cookie)
  * and converts them to a NULL-terminated array of options.
  */
 static int
-get_smb_shareopts(sa_share_impl_t impl_share, const char *shareopts,
+smb_get_shareopts(sa_share_impl_t impl_share, const char *shareopts,
 		  smb_share_t **opts)
 {
 	char *pos, name[SMB_NAME_MAX];
@@ -304,7 +304,7 @@ get_smb_shareopts(sa_share_impl_t impl_share, const char *shareopts,
 	new_opts->guest_ok = B_TRUE;
 	*opts = new_opts;
 
-	rc = foreach_shareopt(shareopts, get_smb_shareopts_cb, *opts);
+	rc = foreach_shareopt(shareopts, smb_get_shareopts_cb, *opts);
 	if (rc != SA_OK) {
 		free(*opts);
 		*opts = NULL;
@@ -334,7 +334,7 @@ smb_enable_share_one(sa_share_impl_t impl_share)
 
 	/* Get any share options */
 	shareopts = FSINFO(impl_share, smb_fstype)->shareopts;
-	rc = get_smb_shareopts(impl_share, shareopts, &opts);
+	rc = smb_get_shareopts(impl_share, shareopts, &opts);
 	if (rc < 0) {
 		free(opts);
 		return SA_SYSTEM_ERR;
@@ -450,7 +450,7 @@ smb_validate_shareopts(const char *shareopts)
 	smb_share_t *opts;
 	int rc = SA_OK;
 
-	rc = get_smb_shareopts(NULL, shareopts, &opts);
+	rc = smb_get_shareopts(NULL, shareopts, &opts);
 
 	return rc;
 }
