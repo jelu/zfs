@@ -213,9 +213,6 @@ changelist_postfix(prop_changelist_t *clp)
 
 		zfs_refresh_properties(cn->cn_handle);
 
-		if (ZFS_IS_VOLUME(cn->cn_handle))
-			continue;
-
 		/*
 		 * Remount if previously mounted or mountpoint was legacy,
 		 * or sharenfs or sharesmb  property is set.
