@@ -165,7 +165,6 @@ __attribute__((constructor)) static void
 libshare_init(void)
 {
 	libshare_nfs_init();
-	libshare_iscsi_init();
 	libshare_smb_init();
 	libshare_iscsi_init();
 
@@ -320,19 +319,19 @@ update_zfs_shares_cb(zfs_handle_t *zhp, void *pcookie)
 		return 0;
 	}
 
-	if (type == ZFS_TYPE_VOLUME) {
-		/* TODO: check whether this is sane */
-		if (sprintf(mountpoint, "/dev/zvol/%s", zfs_get_name(zhp)) < 0) {
-			zfs_close(zhp);
-			return 0;
-		}
-	}
-
 	dataset = (char *)zfs_get_name(zhp);
 
 	if (dataset == NULL) {
 		zfs_close(zhp);
 		return 0;
+	}
+
+	if (type == ZFS_TYPE_VOLUME) {
+		/* TODO: check whether this is sane */
+		if (sprintf(mountpoint, "/dev/zvol/%s", dataset) < 0) {
+			zfs_close(zhp);
+			return 0;
+		}
 	}
 
 	if (type == ZFS_TYPE_FILESYSTEM && !zfs_is_mounted(zhp, NULL)) {
