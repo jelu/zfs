@@ -198,7 +198,8 @@ static zfs_command_t command_table[] = {
 	{ "holds",	zfs_do_holds,		HELP_HOLDS		},
 	{ "release",	zfs_do_release,		HELP_RELEASE		},
 	{ "diff",	zfs_do_diff,		HELP_DIFF		},
-    { "key",        zfs_do_key,             HELP_KEY                },
+	{ NULL },
+	{ "key",        zfs_do_key,             HELP_KEY                },
 };
 
 #define	NCOMMAND	(sizeof (command_table) / sizeof (command_table[0]))
@@ -5487,179 +5488,177 @@ share_mount_one(zfs_handle_t *zhp, int op, int flags, char *protocol,
 	assert(type & (ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME));
 
 	if (type == ZFS_TYPE_FILESYSTEM) {
-	/*
-	 * Check to make sure we can mount/share this dataset.  If we
-	 * are in the global zone and the filesystem is exported to a
-	 * local zone, or if we are in a local zone and the
-	 * filesystem is not exported, then it is an error.
-	 */
-	zoned = zfs_prop_get_int(zhp, ZFS_PROP_ZONED);
+		/*
+		 * Check to make sure we can mount/share this dataset.  If we
+		 * are in the global zone and the filesystem is exported to a
+		 * local zone, or if we are in a local zone and the
+		 * filesystem is not exported, then it is an error.
+		 */
+		zoned = zfs_prop_get_int(zhp, ZFS_PROP_ZONED);
 
-	if (zoned && getzoneid() == GLOBAL_ZONEID) {
-		if (!explicit)
-			return (0);
+		if (zoned && getzoneid() == GLOBAL_ZONEID) {
+			if (!explicit)
+				return (0);
 
-		(void) fprintf(stderr, gettext("cannot %s '%s': "
-		    "dataset is exported to a local zone\n"), cmdname,
-		    zfs_get_name(zhp));
-		return (1);
+			(void) fprintf(stderr, gettext("cannot %s '%s': "
+			    "dataset is exported to a local zone\n"), cmdname,
+			    zfs_get_name(zhp));
+			return (1);
+		} else if (!zoned && getzoneid() != GLOBAL_ZONEID) {
+			if (!explicit)
+				return (0);
 
-	} else if (!zoned && getzoneid() != GLOBAL_ZONEID) {
-		if (!explicit)
-			return (0);
+			(void) fprintf(stderr, gettext("cannot %s '%s': "
+			    "permission denied\n"), cmdname,
+			    zfs_get_name(zhp));
+			return (1);
+		}
 
-		(void) fprintf(stderr, gettext("cannot %s '%s': "
-		    "permission denied\n"), cmdname,
-		    zfs_get_name(zhp));
-		return (1);
-	}
-
-	/*
-	 * Ignore any filesystems which don't apply to us. This
-	 * includes those with a legacy mountpoint, or those with
-	 * legacy share options. We also have to ignore those that
-     * are encrypted that don't currently have their key available
-     * (but that check is done in zfs_is_mountable(), called from
-     * zfs_mount() below).
-	 */
-	verify(zfs_prop_get(zhp, ZFS_PROP_MOUNTPOINT, mountpoint,
-	    sizeof (mountpoint), NULL, NULL, 0, B_FALSE) == 0);
-	verify(zfs_prop_get(zhp, ZFS_PROP_SHARENFS, shareopts,
-	    sizeof (shareopts), NULL, NULL, 0, B_FALSE) == 0);
-	verify(zfs_prop_get(zhp, ZFS_PROP_SHARESMB, smbshareopts,
-	    sizeof (smbshareopts), NULL, NULL, 0, B_FALSE) == 0);
+		/*
+		 * Ignore any filesystems which don't apply to us. This
+		 * includes those with a legacy mountpoint, or those with
+		 * legacy share options. We also have to ignore those that
+		 * are encrypted that don't currently have their key available
+		 * (but that check is done in zfs_is_mountable(), called from
+		 * zfs_mount() below).
+		 */
+		verify(zfs_prop_get(zhp, ZFS_PROP_MOUNTPOINT, mountpoint,
+				    sizeof (mountpoint), NULL, NULL, 0, B_FALSE) == 0);
+		verify(zfs_prop_get(zhp, ZFS_PROP_SHARENFS, shareopts,
+				    sizeof (shareopts), NULL, NULL, 0, B_FALSE) == 0);
+		verify(zfs_prop_get(zhp, ZFS_PROP_SHARESMB, smbshareopts,
+				    sizeof (smbshareopts), NULL, NULL, 0, B_FALSE) == 0);
 
 		if (op == OP_SHARE &&
 		    strcmp(shareopts, "off") == 0 &&
-	    strcmp(smbshareopts, "off") == 0) {
-		if (!explicit)
-			return (0);
-
-		(void) fprintf(stderr, gettext("cannot share '%s': "
-		    "legacy share\n"), zfs_get_name(zhp));
-		(void) fprintf(stderr, gettext("use share(1M) to "
-		    "share this filesystem, or set "
-		    "sharenfs property on\n"));
-		return (1);
-	}
-
-	/*
-	 * We cannot share or mount legacy filesystems. If the
-	 * shareopts is non-legacy but the mountpoint is legacy, we
-	 * treat it as a legacy share.
-	 */
-	if (strcmp(mountpoint, "legacy") == 0) {
-		if (!explicit)
-			return (0);
-
-		(void) fprintf(stderr, gettext("cannot %s '%s': "
-		    "legacy mountpoint\n"), cmdname, zfs_get_name(zhp));
-		(void) fprintf(stderr, gettext("use %s(1M) to "
-		    "%s this filesystem\n"), cmdname, cmdname);
-		return (1);
-	}
-
-	if (strcmp(mountpoint, "none") == 0) {
-		if (!explicit)
-			return (0);
-
-		(void) fprintf(stderr, gettext("cannot %s '%s': no "
-		    "mountpoint set\n"), cmdname, zfs_get_name(zhp));
-		return (1);
-	}
-
-	/*
-	 * canmount	explicit	outcome
-	 * on		no		pass through
-	 * on		yes		pass through
-	 * off		no		return 0
-	 * off		yes		display error, return 1
-	 * noauto	no		return 0
-	 * noauto	yes		pass through
-	 */
-	canmount = zfs_prop_get_int(zhp, ZFS_PROP_CANMOUNT);
-	if (canmount == ZFS_CANMOUNT_OFF) {
-		if (!explicit)
-			return (0);
-
-		(void) fprintf(stderr, gettext("cannot %s '%s': "
-		    "'canmount' property is set to 'off'\n"), cmdname,
-		    zfs_get_name(zhp));
-		return (1);
-	} else if (canmount == ZFS_CANMOUNT_NOAUTO && !explicit) {
-		return (0);
-	}
-
-	/*
-	 * At this point, we have verified that the mountpoint and/or
-	 * shareopts are appropriate for auto management. If the
-	 * filesystem is already mounted or shared, return (failing
-	 * for explicit requests); otherwise mount or share the
-	 * filesystem.
-	 */
-	switch (op) {
-	case OP_SHARE:
-		shared_nfs = zfs_is_shared_nfs(zhp, NULL);
-		shared_smb = zfs_is_shared_smb(zhp, NULL);
-
-		if ((shared_nfs && shared_smb) ||
-		    ((shared_nfs && strcmp(shareopts, "on") == 0) &&
-		    (strcmp(smbshareopts, "off") == 0)) ||
-		    ((shared_smb && strcmp(smbshareopts, "on") == 0) &&
-		    (strcmp(shareopts, "off") == 0))) {
+		    strcmp(smbshareopts, "off") == 0) {
 			if (!explicit)
 				return (0);
 
-			(void) fprintf(stderr, gettext("cannot share "
-			    "'%s': filesystem already shared\n"),
-			    zfs_get_name(zhp));
+			(void) fprintf(stderr, gettext("cannot share '%s': "
+			    "legacy share\n"), zfs_get_name(zhp));
+			(void) fprintf(stderr, gettext("use share(1M) to "
+			    "share this filesystem, or set "
+			    "sharenfs property on\n"));
 			return (1);
 		}
 
-		if (!zfs_is_mounted(zhp, NULL) &&
-		    zfs_mount(zhp, NULL, 0) != 0)
-			return (1);
-
-		if (protocol == NULL) {
-			if (zfs_shareall(zhp) != 0)
-				return (1);
-		} else if (strcmp(protocol, "nfs") == 0) {
-			if (zfs_share_nfs(zhp))
-				return (1);
-		} else if (strcmp(protocol, "smb") == 0) {
-			if (zfs_share_smb(zhp))
-				return (1);
-		} else {
-			(void) fprintf(stderr, gettext("cannot share "
-			    "'%s': invalid share type '%s' "
-			    "specified\n"),
-			    zfs_get_name(zhp), protocol);
-			return (1);
-		}
-
-		break;
-
-	case OP_MOUNT:
-		if (options == NULL)
-			mnt.mnt_mntopts = "";
-		else
-			mnt.mnt_mntopts = (char *)options;
-
-		if (!hasmntopt(&mnt, MNTOPT_REMOUNT) &&
-		    zfs_is_mounted(zhp, NULL)) {
+		/*
+		 * We cannot share or mount legacy filesystems. If the
+		 * shareopts is non-legacy but the mountpoint is legacy, we
+		 * treat it as a legacy share.
+		 */
+		if (strcmp(mountpoint, "legacy") == 0) {
 			if (!explicit)
 				return (0);
 
-			(void) fprintf(stderr, gettext("cannot mount "
-			    "'%s': filesystem already mounted\n"),
-			    zfs_get_name(zhp));
+			(void) fprintf(stderr, gettext("cannot %s '%s': "
+			    "legacy mountpoint\n"), cmdname, zfs_get_name(zhp));
+			(void) fprintf(stderr, gettext("use %s(1M) to "
+			    "%s this filesystem\n"), cmdname, cmdname);
 			return (1);
 		}
 
-		if (zfs_mount(zhp, options, flags) != 0)
+		if (strcmp(mountpoint, "none") == 0) {
+			if (!explicit)
+				return (0);
+
+			(void) fprintf(stderr, gettext("cannot %s '%s': no "
+			    "mountpoint set\n"), cmdname, zfs_get_name(zhp));
 			return (1);
-		break;
-	}
+		}
+
+		/*
+		 * canmount	explicit	outcome
+		 * on		no		pass through
+		 * on		yes		pass through
+		 * off		no		return 0
+		 * off		yes		display error, return 1
+		 * noauto	no		return 0
+		 * noauto	yes		pass through
+		 */
+		canmount = zfs_prop_get_int(zhp, ZFS_PROP_CANMOUNT);
+		if (canmount == ZFS_CANMOUNT_OFF) {
+			if (!explicit)
+				return (0);
+
+			(void) fprintf(stderr, gettext("cannot %s '%s': "
+			    "'canmount' property is set to 'off'\n"), cmdname,
+			    zfs_get_name(zhp));
+			return (1);
+		} else if (canmount == ZFS_CANMOUNT_NOAUTO && !explicit) {
+			return (0);
+		}
+
+		/*
+		 * At this point, we have verified that the mountpoint and/or
+		 * shareopts are appropriate for auto management. If the
+		 * filesystem is already mounted or shared, return (failing
+		 * for explicit requests); otherwise mount or share the
+		 * filesystem.
+		 */
+		switch (op) {
+		case OP_SHARE:
+			shared_nfs = zfs_is_shared_nfs(zhp, NULL);
+			shared_smb = zfs_is_shared_smb(zhp, NULL);
+
+			if ((shared_nfs && shared_smb) ||
+			    ((shared_nfs && strcmp(shareopts, "on") == 0) &&
+			     (strcmp(smbshareopts, "off") == 0)) ||
+			    ((shared_smb && strcmp(smbshareopts, "on") == 0) &&
+			     (strcmp(shareopts, "off") == 0))) {
+				if (!explicit)
+					return (0);
+
+				(void) fprintf(stderr, gettext("cannot share "
+				    "'%s': filesystem already shared\n"),
+				    zfs_get_name(zhp));
+				return (1);
+			}
+
+			if (!zfs_is_mounted(zhp, NULL) &&
+			    zfs_mount(zhp, NULL, 0) != 0)
+				return (1);
+
+			if (protocol == NULL) {
+				if (zfs_shareall(zhp) != 0)
+					return (1);
+			} else if (strcmp(protocol, "nfs") == 0) {
+				if (zfs_share_nfs(zhp))
+					return (1);
+			} else if (strcmp(protocol, "smb") == 0) {
+				if (zfs_share_smb(zhp))
+					return (1);
+			} else {
+				(void) fprintf(stderr, gettext("cannot share "
+				    "'%s': invalid share type '%s' "
+				    "specified\n"),
+				    zfs_get_name(zhp), protocol);
+				return (1);
+			}
+			break;
+
+		case OP_MOUNT:
+			if (options == NULL)
+				mnt.mnt_mntopts = "";
+			else
+				mnt.mnt_mntopts = (char *)options;
+
+			if (!hasmntopt(&mnt, MNTOPT_REMOUNT) &&
+			    zfs_is_mounted(zhp, NULL)) {
+				if (!explicit)
+					return (0);
+
+				(void) fprintf(stderr, gettext("cannot mount "
+				    "'%s': filesystem already mounted\n"),
+				    zfs_get_name(zhp));
+				return (1);
+			}
+
+			if (zfs_mount(zhp, options, flags) != 0)
+				return (1);
+			break;
+		}
 	} else {
 		assert(op == OP_SHARE);
 
@@ -5677,7 +5676,7 @@ share_mount_one(zfs_handle_t *zhp, int op, int flags, char *protocol,
 			    "'shareiscsi' property not set\n"),
 			    zfs_get_name(zhp));
 			(void) fprintf(stderr, gettext("set 'shareiscsi' "
-			    "property or use iscsitadm(1M) to share this "
+			    "property or use ietadm(8) to share this "
 			    "volume\n"));
 			return (1);
 		}
