@@ -203,6 +203,9 @@ get_smb_shareopts_cb(const char *key, const char *value, void *cookie)
 	char *dup_value;
 	smb_share_t *opts = (smb_share_t *)cookie;
 
+	if (strcmp(key, "on") == 0)
+		return SA_OK;
+
 	/* guest_ok and guestok is the same */
 	if (strcmp(key, "guestok") == 0)
 		key = "guest_ok";
@@ -314,8 +317,7 @@ get_smb_shareopts(sa_share_impl_t impl_share, const char *shareopts,
  * Used internally by smb_enable_share to enable sharing for a single host.
  */
 static int
-smb_enable_share_one(sa_share_impl_t impl_share, const char *dataset,
-		     const char *sharepath)
+smb_enable_share_one(sa_share_impl_t impl_share)
 {
 	char *argv[11], *shareopts;
 	smb_share_t *opts;
@@ -323,7 +325,7 @@ smb_enable_share_one(sa_share_impl_t impl_share, const char *dataset,
 
 #ifdef DEBUG
 	fprintf(stderr, "smb_enable_share_one: dataset=%s, path=%s\n",
-		dataset, sharepath);
+		impl_share->dataset, impl_share->sharepath);
 #endif
 
 	opts = (smb_share_t *) malloc(sizeof (smb_share_t));
@@ -338,6 +340,11 @@ smb_enable_share_one(sa_share_impl_t impl_share, const char *dataset,
 		return SA_SYSTEM_ERR;
 	}
 
+#ifdef DEBUG
+	fprintf(stderr, "smb_enable_share_one: shareopts=%s, name=%s, comment=\"%s\", acl=\"%s\", guest_ok=%d\n",
+		shareopts, opts->name, opts->comment, opts->acl, opts->guest_ok);
+#endif
+
 	/* net usershare add sharename path [comment] [acl] [guest_ok=[y|n]] */
 	argv[0]  = NET_CMD_PATH;
 	argv[1]  = (char*)"-S";
@@ -345,7 +352,7 @@ smb_enable_share_one(sa_share_impl_t impl_share, const char *dataset,
 	argv[3]  = (char*)"usershare";
 	argv[4]  = (char*)"add";
 	argv[5]  = (char*)opts->name;
-	argv[6]  = (char*)sharepath;
+	argv[6]  = (char*)impl_share->sharepath;
 	argv[7]  = (char*)opts->comment;
 	argv[8]  = (char*)opts->acl;
 	if (opts->guest_ok)
@@ -380,8 +387,7 @@ smb_enable_share(sa_share_impl_t impl_share)
 		return SA_OK;
 
 	/* Magic: Enable (i.e., 'create new') share */
-	return smb_enable_share_one(impl_share, impl_share->dataset,
-				    impl_share->sharepath);
+	return smb_enable_share_one(impl_share);
 }
 
 /**
