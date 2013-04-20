@@ -25,8 +25,8 @@
 
 export PATH=/usr/local/sbin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin
 
-if [ -z "$PS1" ]; then
-    # Interactive
+if [ -z "$init" ]; then
+    # Not interactive
     grep -Eqi 'zfs=off|zfs=no' /proc/cmdline && exit 3
 fi
 
