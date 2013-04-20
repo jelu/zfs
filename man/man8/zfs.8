@@ -1041,17 +1041,17 @@ iqn.2012-11.com.bayour
 .sp
 That is: The word 'iqn', a dot, year and date, a dot and then the reversed form of the domain for the machine (in this/my case \fBbayour.com\fR) and then a newline. The line must start at the first column (no leading spaces etc) and contain only one line. If the \fBname\fR option is used, the \fB/etc/iscsi_target_id\fR and the hosts domain name is ignored.
 .sp
-The \fBlun\fR is an integer between 0 and 16384 and the first \fIlun\fR defined MUST be 0.
+The \fBlun\fR is an integer between 0 and 16384 and the first \fIlun\fR defined MUST be 0 (the default).
 .sp
 The possible values for \fBiomode\fR is \fIwt\fR (\fBW\fRrite-\fBT\fRhrough - the default), \fIwb\fR (\fBW\fRrite-\fBB\fRack caching) and \fIro\fR (\fBR\fRead-\fBO\fRnly).
 .sp
 \fBWARNING: IOMode=wb could lead to serious data loss from an unexpected system failure (power loss, system crash). Use at your own risk!\fR
 .sp
-The possible options for \fBtype\fR on Linux are: \fIfileio\fR, \fIblockio\fR or \fInullio\fR. For compability with the *Solaris and *BSD implementations of ZFS, using either \fBtype=disk\fR or \fBtype=tape\fR is accepted, but will both be replaced with the default value \fBtype=fileio\fR.
+The possible options for \fBtype\fR on Linux are: \fIfileio\fR, \fIblockio\fR or \fInullio\fR. For compability with the *Solaris and *BSD implementations of ZFS, using either \fBtype=disk\fR or \fBtype=tape\fR is accepted, but will both be replaced with the default value \fBtype=blockio\fR.
 .sp
 \fBNOTE:\fR \fIIOMode\fR \fIwb\fR is replaced with \fIwt\fR if using \fBtype=blockio\fR, as it performs no caching.
 .sp
-The possible values for \fBblocksize\fR is 512 (the default), 1024, 2048 or 4096.
+The possible values for \fBblocksize\fR is 512, 1024, 2048 or 4096 (the default). If any other value is specified, ZFS will fail with an error \fIcannot be set to invalid options\fR.
 .sp
 \fBWARNING: Once your data is written at a given BlockSize you cannot change this BlockSize without risking corruption of your existing data.\fR
 .sp
