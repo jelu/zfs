@@ -57,6 +57,7 @@
 #include <unistd.h>
 #include <libzfs.h>
 #include <libshare.h>
+#include <sys/fs/zfs.h>
 #include "libshare_impl.h"
 #include "iscsi.h"
 
@@ -480,9 +481,22 @@ iscsi_get_shareopts(sa_share_impl_t impl_share, const char *shareopts,
 	char iqn[255];
 	int rc;
 	iscsi_shareopts_t *new_opts;
+	uint64_t blocksize;
+	zfs_handle_t *zhp;
 
 	assert(opts != NULL);
 	*opts = NULL;
+
+	/* Get the volume blocksize */
+	zhp = zfs_open(impl_share->handle->zfs_libhandle,
+		       impl_share->dataset,
+		       ZFS_TYPE_FILESYSTEM|ZFS_TYPE_VOLUME);
+	if (zhp == NULL)
+		return SA_SYSTEM_ERR;
+
+	blocksize = zfs_prop_get_int(zhp, ZFS_PROP_VOLBLOCKSIZE);
+
+	zfs_close(zhp);
 
 	/* Set defaults */
 	new_opts = (iscsi_shareopts_t *) malloc(sizeof (iscsi_shareopts_t));
@@ -500,9 +514,13 @@ iscsi_get_shareopts(sa_share_impl_t impl_share, const char *shareopts,
 		new_opts->name[0] = '\0';
 
 	strncpy(new_opts->iomode, "wt", 3);
-	strncpy(new_opts->type, "fileio", 10);
+	strncpy(new_opts->type, "blockio", 10);
 	new_opts->lun = 0;
-	new_opts->blocksize = 512;
+
+	if (blocksize == 512 || blocksize == 1024 || blocksize == 2048 || blocksize == 4096)
+		new_opts->blocksize = blocksize;
+	else
+		new_opts->blocksize = 4096;
 	*opts = new_opts;
 
 	rc = foreach_shareopt(shareopts, iscsi_get_shareopts_cb, *opts);
