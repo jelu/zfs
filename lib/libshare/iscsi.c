@@ -498,7 +498,7 @@ iscsi_get_shareopts(sa_share_impl_t impl_share, const char *shareopts,
 	assert(opts != NULL);
 	*opts = NULL;
 
-	new_opts = (iscsi_shareopts_t *) malloc(sizeof (iscsi_shareopts_t));
+	new_opts = (iscsi_shareopts_t *) calloc(sizeof (iscsi_shareopts_t), 1);
 	if (new_opts == NULL)
 		return SA_NO_MEMORY;
 
@@ -601,8 +601,10 @@ iscsi_enable_share_one(sa_share_impl_t impl_share, int tid)
 	argv[7] = NULL;
 
 	rc = libzfs_run_process(argv[0], argv, STDERR_VERBOSE);
-	if (rc < 0)
+	if (rc < 0) {
+		free(opts);
 		return SA_SYSTEM_ERR;
+	}
 
 	/* ====== */
 	/* PART 2 - Set share path and lun. */
@@ -618,8 +620,10 @@ iscsi_enable_share_one(sa_share_impl_t impl_share, int tid)
 	argv[9] = NULL;
 
 	rc = libzfs_run_process(argv[0], argv, STDERR_VERBOSE);
-	if (rc < 0)
+	if (rc < 0) {
+		free(opts);
 		return SA_SYSTEM_ERR;
+	}
 
 	/* ====== */
 	/* PART 3 - Run local update script. */
@@ -629,10 +633,13 @@ iscsi_enable_share_one(sa_share_impl_t impl_share, int tid)
 		argv[2] = NULL;
 
 		rc = libzfs_run_process(argv[0], argv, STDERR_VERBOSE);
-		if (rc < 0)
+		if (rc < 0) {
+			free(opts);
 			return SA_SYSTEM_ERR;
+		}
 	}
 
+	free(opts);
 	return SA_OK;
 }
 
@@ -772,6 +779,7 @@ iscsi_validate_shareopts(const char *shareopts)
 
 	rc = iscsi_get_shareopts(NULL, shareopts, &opts);
 
+	free(opts);
 	return rc;
 }
 
