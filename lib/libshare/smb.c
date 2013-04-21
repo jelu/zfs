@@ -289,7 +289,7 @@ smb_get_shareopts(sa_share_impl_t impl_share, const char *shareopts,
 		}
 
 		strncpy(new_opts->name, name, strlen(name));
-		new_opts->name [sizeof (new_opts->name)-1] = '\0';
+		new_opts->name [strlen(name)+1] = '\0';
 	} else
 		new_opts->name[0] = '\0';
 
