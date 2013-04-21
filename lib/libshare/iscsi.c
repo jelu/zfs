@@ -391,6 +391,17 @@ iscsi_get_shareopts_cb(const char *key, const char *value, void *cookie)
 	if (strcmp(key, "iqn") == 0)
 		key = "name";
 
+	/* iotype is what's used in PROC_IET_VOLUME, but Type in ietadm
+	 * and 'type' in shareiscsi option...
+	 */
+	if (strcmp(key, "iotype") == 0 ||
+	    strcmp(key, "Type") == 0)
+		key = "type";
+
+	/* Just for completeness */
+	if (strcmp(key, "BlockSize") == 0)
+		key = "blocksize";
+
 	/* Verify all options */
 	if (strcmp(key, "name") != 0 &&
 	    strcmp(key, "lun") != 0 &&
@@ -491,6 +502,17 @@ iscsi_get_shareopts(sa_share_impl_t impl_share, const char *shareopts,
 	if (new_opts == NULL)
 		return SA_NO_MEMORY;
 
+	/* Set defaults */
+	if (impl_share && impl_share->dataset) {
+		if (iscsi_generate_target(impl_share->dataset, iqn,
+					  sizeof (iqn)) < 0)
+			return SA_SYSTEM_ERR;
+
+		strncpy(new_opts->name, iqn, strlen(iqn));
+		new_opts->name [strlen(iqn)+1] = '\0';
+	} else
+		new_opts->name[0] = '\0';
+
 	if (impl_share) {
 		/* Get the volume blocksize */
 		zhp = zfs_open(impl_share->handle->zfs_libhandle,
@@ -511,17 +533,6 @@ iscsi_get_shareopts(sa_share_impl_t impl_share, const char *shareopts,
 			new_opts->blocksize = 4096;
 	} else
 		new_opts->blocksize = 4096;
-
-	/* Set defaults */
-	if (impl_share && impl_share->dataset) {
-		if (iscsi_generate_target(impl_share->dataset, iqn,
-					  sizeof (iqn)) < 0)
-			return SA_SYSTEM_ERR;
-
-		strncpy(new_opts->name, iqn, strlen(iqn));
-		new_opts->name [sizeof (new_opts->name)-1] = '\0';
-	} else
-		new_opts->name[0] = '\0';
 
 	strncpy(new_opts->iomode, "wt", 3);
 	strncpy(new_opts->type, "blockio", 10);
