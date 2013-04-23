@@ -310,7 +310,7 @@ iscsi_generate_target(const char *path, char *iqn, size_t iqn_len)
 	return SA_OK;
 }
 
-static int
+static void
 iscsi_generate_device_name(char *name, char **device)
 {
 	int i;
@@ -324,9 +324,7 @@ iscsi_generate_device_name(char *name, char **device)
 		string[i] = src_chars[ rand() % 62];
 	string[i] = '\0';
 
-	strcpy(*device, string);
-
-	return SA_OK;
+	*device = strdup(string);
 }
 
 /* iscsi_retrieve_targets_iet() retrieves list of iSCSI targets - IET version  */
@@ -551,7 +549,7 @@ iscsi_retrieve_targets_scst(void)
 			snprintf(tmp_path, strlen(dup_path)+25,
 				 "%s/luns/0/device/blocksize", dup_path);
 			iscsi_read_sysfs_value(tmp_path, &buffer);
-			blocksize = strdup(buffer);
+			blocksize = strdup(buffer); // TODO: If buffer=NULL, segfault
 
 			/* RETREIVE block device path */
 			snprintf(tmp_path, strlen(dup_path)+24,
@@ -991,6 +989,7 @@ iscsi_enable_share_one_scst(sa_share_impl_t impl_share, int tid)
 	}
 
 	free(opts);
+
 	return SA_OK;
 }
 
