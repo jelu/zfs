@@ -1,5 +1,7 @@
 #!/bin/bash
 
+SYSFS=/sys/kernel/scst_tgt
+
 BASETANK="share"
 DATE=`date "+%Y%m%d"`
 
@@ -36,7 +38,11 @@ check_exists() {
 
 check_shares() {
 	if [ "$TEST_ISCSI" == "1" ]; then
-		cat /proc/net/iet/volume
+		if [ -d $SYSFS ]; then
+		    find $SYSFS/targets/iscsi/iqn.* 2> /dev/null
+		elif [ -f /proc/net/iet/volume ]; then
+		    cat /proc/net/iet/volume
+		fi
 		echo
 	fi
 
@@ -66,10 +72,30 @@ if echo "$*" | grep -qi "unpack"; then
 
 	sh /etc/init.d/zfs stop
 
-	for tid in `grep ^tid /proc/net/iet/volume | sed "s@.*:\([0-9].*\) name.*@\1@"`
-	do
-		ietadm --op delete --tid $tid
-	done
+	if [ -d $SYSFS ]; then
+		find $SYSFS/targets/iscsi/iqn.* -maxdepth 0 2> /dev/null | \
+		    while read dir; do
+			name=`echo "$dir" | sed 's@.*/@@'`
+
+			echo 0 > $SYSFS/targets/iscsi/$name/enabled
+
+			find $dir/luns/? -maxdepth 0 \
+			    -type d 2> /dev/null | \
+			    while read lun; do
+				lun=`echo "$lun" | sed 's@.*/@@'`
+				device=`/bin/ls -l  $dir/luns/$lun/device \
+				    | sed 's@.*/@@'`
+				echo "del_device $device" > $SYSFS/handlers/vdisk_blockio/mgmt
+			    done
+
+			echo "del_target $name" > $SYSFS/targets/iscsi/mgmt
+		    done
+	elif [ -f /proc/net/iet/volume ]; then
+		for tid in `grep ^tid /proc/net/iet/volume | sed "s@.*:\([0-9].*\) name.*@\1@"`
+		do
+			ietadm --op delete --tid $tid
+		done
+	fi
 
 	set -e
 	rmmod `lsmod | grep ^z | grep -v zlib_deflate | sed 's@ .*@@'` spl zlib_deflate

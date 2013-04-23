@@ -24,6 +24,7 @@
  * Copyright (c) 2011 Gunnar Beutner
  */
 
+#define SYSFS_SCST "/sys/kernel/scst_tgt"
 #define PROC_IET_VOLUME "/proc/net/iet/volume"
 #define IETM_CMD_PATH "/usr/sbin/ietadm"
 #define DOMAINNAME_FILE "/etc/domainname"
@@ -53,6 +54,7 @@ typedef struct iscsi_target_s {
         int     blocks;         /* Target Size (blocks) */
         int     blocksize;      /* Target Block Size (bytes) */
         char    path[PATH_MAX];	/* Target Path */
+	char	device[16];	/* For SCST: The iSCSI device */
 
         struct iscsi_target_s *next;
 } iscsi_target_t;

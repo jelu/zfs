@@ -55,6 +55,7 @@
 #include <fcntl.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <dirent.h>
 #include <libzfs.h>
 #include <libshare.h>
 #include <sys/fs/zfs.h>
@@ -64,6 +65,123 @@
 static boolean_t iscsi_available(void);
 
 static sa_fstype_t *iscsi_fstype;
+
+/**
+ * What iSCSI implementation found
+ * -1: none
+ *  1: IET found
+ *  2: SCST found
+ */
+static int iscsi_implementation;
+
+typedef struct iscsi_dirs_s {
+	char		path[PATH_MAX];
+	char		entry[PATH_MAX];
+	struct stat	stats;
+
+	struct	iscsi_dirs_s *next;
+} iscsi_dirs_t;
+
+static iscsi_dirs_t *
+iscsi_look_for_stuff(char *path, const char *needle, boolean_t check_dir, int index)
+{
+	char path2[PATH_MAX], path3[PATH_MAX];
+	DIR *dir;
+	struct dirent *directory;
+	struct stat eStat;
+	iscsi_dirs_t *entries = NULL, *new_entries = NULL;
+
+	if ((dir = opendir(path))) {
+		while ((directory = readdir(dir))) {
+			if (directory->d_name[0] == '.')
+				continue;
+
+			snprintf(path2, sizeof (path2),
+				 "%s/%s", path, directory->d_name);
+
+			if (stat(path2, &eStat) == -1)
+				goto look_out;
+
+			if (check_dir && !S_ISDIR(eStat.st_mode))
+				continue;
+
+			if (index) {
+				if (strncmp(directory->d_name, needle, index) == 0)
+					strncpy(path3, path2, sizeof(path3));
+			} else {
+				if (strcmp(directory->d_name, needle) == 0)
+					strncpy(path3, path2, sizeof(path3));
+			}
+
+			entries = (iscsi_dirs_t *)malloc(sizeof (iscsi_dirs_t));
+			if (entries == NULL)
+				goto look_out;
+
+			strncpy(entries->path, path3, sizeof(entries->path));
+			strncpy(entries->entry, directory->d_name, sizeof(entries->entry));
+			entries->stats = eStat;
+
+			entries->next = new_entries;
+			new_entries = entries;
+		}
+
+look_out:
+		closedir(dir);
+	}
+
+	return new_entries;
+}
+
+static int
+iscsi_read_sysfs_value(char *path, char **value)
+{
+	int rc = SA_SYSTEM_ERR;
+	char buffer[255];
+	FILE *scst_sysfs_file_fp = NULL;
+
+	*value = NULL;
+
+	scst_sysfs_file_fp = fopen(path, "r");
+	if (scst_sysfs_file_fp != NULL) {
+		if (fgets(buffer, sizeof (buffer), scst_sysfs_file_fp) != NULL) {
+			buffer[strlen(buffer)-1] = '\0';
+
+			*value = strdup(buffer);
+
+			rc = SA_OK;
+		}
+
+		fclose(scst_sysfs_file_fp);
+	}
+
+	return rc;
+}
+
+static int
+iscsi_write_sysfs_value(char *path, char *value)
+{
+	char full_path[PATH_MAX];
+	int rc = SA_SYSTEM_ERR;
+	FILE *scst_sysfs_file_fp = NULL;
+
+	sprintf(full_path, "%s/%s", SYSFS_SCST, path);
+
+#ifdef DEBUG
+	fprintf(stderr, "iscsi_write_sysfs_value: %s\n                         => %s\n",
+		full_path, value);
+	rc = SA_OK;
+#endif
+
+	scst_sysfs_file_fp = fopen(full_path, "w");
+	if (scst_sysfs_file_fp != NULL) {
+		if (fputs(value, scst_sysfs_file_fp))
+			rc = SA_OK;
+
+		fclose(scst_sysfs_file_fp);
+	}
+
+	return rc;
+}
 
 /*
  * Generate a target name using the current year and month,
@@ -192,12 +310,28 @@ iscsi_generate_target(const char *path, char *iqn, size_t iqn_len)
 	return SA_OK;
 }
 
-/*
- * iscsi_retrieve_targets() retrieves list of iSCSI targets from
- * /proc/net/iet/volume
- */
 static int
-iscsi_retrieve_targets(void)
+iscsi_generate_device_name(char *name, char **device)
+{
+	int i;
+	char string[17], src_chars[62] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+	/* Seed number for rand() */
+	srand((unsigned int) time(0) + getpid());
+
+	/* ASCII characters only */
+	for (i = 0; i < 16; ++i)
+		string[i] = src_chars[ rand() % 62];
+	string[i] = '\0';
+
+	strcpy(*device, string);
+
+	return SA_OK;
+}
+
+/* iscsi_retrieve_targets_iet() retrieves list of iSCSI targets - IET version  */
+static int
+iscsi_retrieve_targets_iet(void)
 {
 	FILE *iscsi_volumes_fp = NULL;
 	char buffer[512];
@@ -213,7 +347,7 @@ iscsi_retrieve_targets(void)
 	iscsi_volumes_fp = fopen(PROC_IET_VOLUME, "r");
 	if (iscsi_volumes_fp == NULL) {
 		rc = SA_SYSTEM_ERR;
-		goto out;
+		goto retrieve_targets_iet_out;
 	}
 
 	/* Load the file... */
@@ -287,7 +421,7 @@ iscsi_retrieve_targets(void)
 
 			if (dup_value == NULL) {
 				rc = SA_NO_MEMORY;
-				goto out;
+				goto retrieve_targets_iet_out;
 			}
 
 			if (type == ISCSI_TARGET) {
@@ -331,7 +465,7 @@ next:
 		target = (iscsi_target_t *)malloc(sizeof (iscsi_target_t));
 		if (target == NULL) {
 			rc = SA_NO_MEMORY;
-			goto out;
+			goto retrieve_targets_iet_out;
 		}
 
 		target->tid = atoi(tid);
@@ -357,7 +491,7 @@ next:
 	/* TODO: free existing iscsi_targets */
 	iscsi_targets = new_targets;
 
-out:
+retrieve_targets_iet_out:
 	if (iscsi_volumes_fp != NULL)
 		fclose(iscsi_volumes_fp);
 
@@ -370,6 +504,140 @@ out:
 	free(blocks);
 	free(blocksize);
 	free(path);
+
+	return rc;
+}
+
+/* iscsi_retrieve_targets_scst() retrieves list of iSCSI targets - SCST version */
+static int
+iscsi_retrieve_targets_scst(void)
+{
+	char *buffer, *link = NULL, *dup_path, path[PATH_MAX], tmp_path[PATH_MAX];
+	int rc = SA_OK;
+	iscsi_dirs_t *entries1, *entries2;
+	iscsi_target_t *target, *new_targets = NULL;
+
+	/* For storing the share info */
+	char *tid = NULL, lun[5], *state = NULL, *blocksize = NULL;
+	char *name = NULL, *iotype = NULL, *iomode = NULL, *dev_path = NULL,
+		 *device = NULL;
+
+	/* DIR: /sys/kernel/scst_tgt/targets */
+	snprintf(path, strlen(SYSFS_SCST)+9, "%s/targets", SYSFS_SCST);
+	entries1 = iscsi_look_for_stuff(path, "iscsi", B_TRUE, 0);
+	while (entries1 != NULL) {
+		entries2 = iscsi_look_for_stuff(entries1->path, "iqn.", B_TRUE, 4);
+		while (entries2 != NULL) {
+			/* DIR: /sys/kernel/scst_tgt/targets/iscsi/iqn.* */
+			dup_path = entries2->path;
+
+			/* Save the share name */
+			name = strdup(entries2->entry);
+
+			/* RETREIVE state */
+			snprintf(tmp_path, strlen(dup_path)+9, "%s/enabled", dup_path);
+			iscsi_read_sysfs_value(tmp_path, &buffer);
+			state = strdup(buffer);
+
+			/* RETREIVE tid */
+			snprintf(tmp_path, strlen(dup_path)+5, "%s/tid", dup_path);
+			iscsi_read_sysfs_value(tmp_path, &buffer);
+			tid = strdup(buffer);
+
+			/* TODO: Find 1-? for the folloing as well */
+			strcpy(lun, "0");
+
+			/* RETREIVE blocksize */
+			snprintf(tmp_path, strlen(dup_path)+25,
+				 "%s/luns/0/device/blocksize", dup_path);
+			iscsi_read_sysfs_value(tmp_path, &buffer);
+			blocksize = strdup(buffer);
+
+			/* RETREIVE block device path */
+			snprintf(tmp_path, strlen(dup_path)+24,
+				 "%s/luns/0/device/filename", dup_path);
+			iscsi_read_sysfs_value(tmp_path, &buffer);
+			dev_path = strdup(buffer);
+
+			/* RETREIVE scst device name
+			 * trickier: '6550a239-iscsi1' (s@.*-@@) */
+			snprintf(tmp_path, strlen(dup_path)+26,
+				 "%s/luns/0/device/t10_dev_id", dup_path);
+			iscsi_read_sysfs_value(tmp_path, &buffer);
+			device = strstr(buffer, "-")+1;
+
+			/* RETREIVE iotype
+			 * tricker: it's only availible in the link: */
+			// $SYSFS/targets/iscsi/$name/luns/0/device/handler
+			// => /sys/kernel/scst_tgt/handlers/vdisk_blockio
+			snprintf(tmp_path, strlen(dup_path)+23,
+				 "%s/luns/0/device/handler", dup_path);
+
+			link = (char *) calloc(PATH_MAX, 1);
+			if (link == NULL) {
+				rc = SA_NO_MEMORY;
+				goto retrieve_targets_scst_out;
+			}
+
+			readlink(tmp_path, link, PATH_MAX);
+			link[strlen(link)] = '\0';
+			iotype = strstr(link, "_") + 1;
+
+			/* TODO: Retrieve iomode */
+
+
+			target = (iscsi_target_t *)malloc(sizeof (iscsi_target_t));
+			if (target == NULL) {
+				rc = SA_NO_MEMORY;
+				goto retrieve_targets_scst_out;
+			}
+
+			target->tid = atoi(tid);
+			target->lun = atoi(lun);
+			target->state = atoi(state);
+			target->blocksize = atoi(blocksize);
+
+			strncpy(target->name,   name,     strlen(name));
+			strncpy(target->path,   dev_path, strlen(dev_path));
+			strncpy(target->device, device,   strlen(device));
+			strncpy(target->iotype, iotype,   strlen(iotype));
+// TODO			strncpy(target->iomode, iomode,   strlen(iomode));
+
+#ifdef DEBUG
+			fprintf(stderr, "iscsi_retrieve_targets: target=%s, tid=%d, path=%s\n",
+				target->name, target->tid, target->path);
+#endif
+
+			/* Append the target to the list of new targets */
+			target->next = new_targets;
+			new_targets = target;
+
+
+			/* Next entry in target directory */
+			entries2 = entries2->next;
+		}
+
+		/* Next target dir */
+		entries1 = entries1->next;
+	}
+
+	/* TODO: free existing iscsi_targets */
+	iscsi_targets = new_targets;
+
+retrieve_targets_scst_out:
+	return rc;
+}
+
+/* WRAPPER: Depending on iSCSI implementation, call the relevant function */
+static int
+iscsi_retrieve_targets(void)
+{
+	int rc;
+
+	if (iscsi_implementation == 1)
+		rc = iscsi_retrieve_targets_iet();
+	else if (iscsi_implementation == 2)
+		rc = iscsi_retrieve_targets_scst();
 
 	return rc;
 }
@@ -434,9 +702,12 @@ iscsi_get_shareopts_cb(const char *key, const char *value, void *cookie)
 		 * The *Solaris options 'disk' (and future 'tape')
 		 * isn't availible in ietadm. It _seems_ that 'fileio'
 		 * is the Linux version.
+		 *
+		 * NOTE: Only for IET
 		 */
-		if (strcmp(dup_value, "disk") == 0 ||
-		    strcmp(dup_value, "tape") == 0)
+		if (iscsi_implementation == 1 && 
+		    (strcmp(dup_value, "disk") == 0 ||
+		     strcmp(dup_value, "tape") == 0))
 			strncpy(dup_value, "fileio", 10);
 
 		strncpy(opts->type, dup_value, sizeof (opts->type));
@@ -549,7 +820,7 @@ iscsi_get_shareopts(sa_share_impl_t impl_share, const char *shareopts,
 }
 
 static int
-iscsi_enable_share_one(sa_share_impl_t impl_share, int tid)
+iscsi_enable_share_one_iet(sa_share_impl_t impl_share, int tid)
 {
 	char *argv[10], params_name[255], params[255], tid_s[11];
 	char *shareopts;
@@ -643,6 +914,100 @@ iscsi_enable_share_one(sa_share_impl_t impl_share, int tid)
 	return SA_OK;
 }
 
+/* NOTE: TID is not use with SCST - it's autogenerated at create time. */
+static int
+iscsi_enable_share_one_scst(sa_share_impl_t impl_share, int tid)
+{
+	char *argv[3], *shareopts, *device, buffer[255], path[PATH_MAX];
+	iscsi_shareopts_t *opts;
+	int rc;
+
+#ifdef DEBUG
+	fprintf(stderr, "iscsi_enable_share_one: tid=%d, sharepath=%s\n",
+		tid, impl_share->sharepath);
+#endif
+
+	opts = (iscsi_shareopts_t *) malloc(sizeof (iscsi_shareopts_t));
+	if (opts == NULL)
+		return SA_NO_MEMORY;
+
+	/* Get any share options */
+	shareopts = FSINFO(impl_share, iscsi_fstype)->shareopts;
+	rc = iscsi_get_shareopts(impl_share, shareopts, &opts);
+	if (rc < 0) {
+		free(opts);
+		return SA_SYSTEM_ERR;
+	}
+
+	/* Generate a scst device name from the dataset name */
+	iscsi_generate_device_name(impl_share->dataset, &device);
+
+#ifdef DEBUG
+	fprintf(stderr, "iscsi_enable_share_one: name=%s, iomode=%s, type=%s, lun=%d, blocksize=%d\n",
+		opts->name, opts->iomode, opts->type, opts->lun, opts->blocksize);
+#endif
+
+	/* ====== */
+	/* PART 1 - Add target */
+	// echo "add_target $name" > $SYSFS/targets/iscsi/mgmt
+	strcpy(path, "targets/iscsi/mgmt");
+	sprintf(buffer, "add_target %s", opts->name);
+	iscsi_write_sysfs_value(path, buffer);
+
+	/* ====== */
+	/* PART 2 - Add device */
+	// echo "add_device $dev filename=/dev/zvol/$vol; blocksize=512" > $SYSFS/handlers/vdisk_blockio/mgmt
+	sprintf(path, "handlers/vdisk_%s/mgmt", opts->type);
+	sprintf(buffer, "add_device %s filename=%s; blocksize=%d",
+		device, impl_share->sharepath, opts->blocksize);
+	iscsi_write_sysfs_value(path, buffer);
+
+	/* ====== */
+	/* PART 3 - Add lun */
+	// echo "add $dev 0" > $SYSFS/targets/iscsi/$name/luns/mgmt
+	sprintf(path, "targets/iscsi/%s/luns/mgmt", opts->name);
+	sprintf(buffer, "add %s %d", device, opts->lun);
+	iscsi_write_sysfs_value(path, buffer);
+
+	/* ====== */
+	/* PART 4 - Enable target */
+	// echo 1 > $SYSFS/targets/iscsi/$name/enabled
+	sprintf(path, "targets/iscsi/%s/enabled", opts->name);
+	strcpy(buffer, "1");
+	iscsi_write_sysfs_value(path, buffer);
+
+	/* ====== */
+	/* PART 5 - Run local update script. */
+	if (access(EXTRA_SHARE_SCRIPT, X_OK) == 0) {
+		argv[0] = (char*)EXTRA_SHARE_SCRIPT;
+		argv[1] = opts->name;
+		argv[2] = NULL;
+
+		rc = libzfs_run_process(argv[0], argv, STDERR_VERBOSE);
+		if (rc < 0) {
+			free(opts);
+			return SA_SYSTEM_ERR;
+		}
+	}
+
+	free(opts);
+	return SA_OK;
+}
+
+/* WRAPPER: Depending on iSCSI implementation, call the relevant function */
+static int
+iscsi_enable_share_one(sa_share_impl_t impl_share, int tid)
+{
+	int rc;
+
+	if (iscsi_implementation == 1)
+		rc = iscsi_enable_share_one_iet(impl_share, tid);
+	else if (iscsi_implementation == 2)
+		rc = iscsi_enable_share_one_scst(impl_share, tid);
+
+	return rc;
+}
+
 static int
 iscsi_enable_share(sa_share_impl_t impl_share)
 {
@@ -665,6 +1030,7 @@ iscsi_enable_share(sa_share_impl_t impl_share)
 	/* Go through list of targets, get next avail TID. */
 	while (iscsi_targets != NULL) {
 		tid = iscsi_targets->tid;
+
 		iscsi_targets = iscsi_targets->next;
 	}
 	tid++; /* Next TID is/should be availible */
@@ -674,7 +1040,7 @@ iscsi_enable_share(sa_share_impl_t impl_share)
 }
 
 static int
-iscsi_disable_share_one(int tid)
+iscsi_disable_share_one_iet(int tid)
 {
 	char *argv[6];
 	char tid_s[11];
@@ -695,6 +1061,66 @@ iscsi_disable_share_one(int tid)
 		return SA_SYSTEM_ERR;
 	else
 		return SA_OK;
+}
+
+static int
+iscsi_disable_share_one_scst(int tid)
+{
+	char path[PATH_MAX], buffer[255];
+
+	/* Retreive the list of (possible) active shares */
+	iscsi_retrieve_targets();
+
+	while (iscsi_targets != NULL) {
+		if (iscsi_targets->tid == tid) {
+#ifdef DEBUG
+			fprintf(stderr, "iscsi_disable_share_one_scst: target=%s, tid=%d, path=%s, device=%s\n",
+				iscsi_targets->name, iscsi_targets->tid, iscsi_targets->path, iscsi_targets->iotype);
+#endif
+
+			break;
+		}
+
+		iscsi_targets = iscsi_targets->next;
+	}
+
+	/* ====== */
+	/* PART 1 - Disable target */
+	// echo 0 > $SYSFS/targets/iscsi/$name/enabled
+	sprintf(path, "targets/iscsi/%s/enabled", iscsi_targets->name);
+	strcpy(buffer, "0");
+	iscsi_write_sysfs_value(path, buffer);
+
+	/* ====== */
+	/* PART 2 - Delete device */
+        // dev=`/bin/ls -l $SYSFS/targets/iscsi/$name/luns/0/device | sed 's@.*/@@'`
+        // echo "del_device $dev" > $SYSFS/handlers/vdisk_blockio/mgmt
+	sprintf(path, "handlers/vdisk_%s/mgmt", iscsi_targets->iotype);
+	sprintf(buffer, "del_device %s", iscsi_targets->device);
+	iscsi_write_sysfs_value(path, buffer);
+
+	/* ====== */
+	/* PART 3 - Delete target */
+        // echo "del_target $name" > $SYSFS/targets/iscsi/mgmt
+	strcpy(path, "targets/iscsi/mgmt");
+	sprintf(buffer, "del_target %s", iscsi_targets->name);
+	iscsi_write_sysfs_value(path, buffer);
+
+	return SA_OK;
+}
+
+/* WRAPPER: Depending on iSCSI implementation, call the relevant function */
+static int
+iscsi_disable_share_one(int tid)
+{
+	int rc;
+
+	if (iscsi_implementation == 1)
+		rc = iscsi_disable_share_one_iet(tid);
+	else if (iscsi_implementation == 2)
+		rc = iscsi_disable_share_one_scst(tid);
+
+	return rc;
 }
 
 static int
@@ -849,13 +1275,29 @@ static const sa_share_ops_t iscsi_shareops = {
 static boolean_t
 iscsi_available(void)
 {
-	if (access(IETM_CMD_PATH, X_OK) != 0)
-		return B_FALSE;
+	DIR *sysfs_scst;
 
-	if (access(PROC_IET_VOLUME, F_OK) != 0)
-		return B_FALSE;
+	iscsi_implementation = -1;
 
-	return B_TRUE;
+	/* First check if this is IET */
+	if (access(PROC_IET_VOLUME, F_OK) == 0) {
+		if (access(IETM_CMD_PATH, X_OK) == 0) {
+			iscsi_implementation = 1;
+
+			return B_TRUE;
+		}
+	} else {
+		/* Then check if it's SCST */
+		sysfs_scst = opendir(SYSFS_SCST);
+		if (sysfs_scst != NULL) {
+			iscsi_implementation = 2;
+			closedir(sysfs_scst);
+
+			return B_TRUE;
+		}
+	}
+
+	return B_FALSE;
 }
 
 void
