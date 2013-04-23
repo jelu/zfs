@@ -560,7 +560,7 @@ iscsi_retrieve_targets_scst(void)
 				snprintf(tmp_path, strlen(dup_path)+25,
 					 "%s/luns/%s/device/blocksize", dup_path, lun);
 				iscsi_read_sysfs_value(tmp_path, &buffer);
-				blocksize = strdup(buffer); // TODO: If buffer=NULL, segfault
+				blocksize = strdup(buffer);
 
 				/* RETREIVE block device path */
 				snprintf(tmp_path, strlen(dup_path)+24,
@@ -1226,23 +1226,42 @@ static int
 iscsi_update_shareopts(sa_share_impl_t impl_share, const char *resource,
 		       const char *shareopts)
 {
-	char *shareopts_dup;
+	char *shareopts_dup, *old_shareopts, iqn[255];;
 	boolean_t needs_reshare = B_FALSE;
-	char *old_shareopts;
 
 	if(!impl_share)
 		return SA_SYSTEM_ERR;
 
+// XXX
 #ifdef DEBUG
-	fprintf(stderr, "iscsi_update_shareopts: share=%s;%s, active=%d, old_shareopts=%s\n",
-		impl_share->dataset, impl_share->sharepath, FSINFO(impl_share, iscsi_fstype)->active,
-		FSINFO(impl_share, iscsi_fstype)->shareopts ? NULL : "null");
+	fprintf(stderr, "iscsi_update_shareopts: share=%s;%s,"
+		" active=%d, new_shareopts=%s, old_shareopts=%s\n",
+		impl_share->dataset, impl_share->sharepath,
+		FSINFO(impl_share, iscsi_fstype)->active, shareopts,
+		FSINFO(impl_share, iscsi_fstype)->shareopts ?
+		FSINFO(impl_share, iscsi_fstype)->shareopts : "null");
 #endif
 
 	FSINFO(impl_share, iscsi_fstype)->active =
 		iscsi_is_share_active(impl_share);
 
 	old_shareopts = FSINFO(impl_share, iscsi_fstype)->shareopts;
+
+	if (strcmp(shareopts, "on") == 0) {
+		/* Force a IQN value. This so that the iqn doesn't change
+		 * 'next month' (when it's regenerated again) .
+		 * NOTE: Does not change shareiscsi option, only sharetab!
+		 */
+		if (iscsi_generate_target(impl_share->dataset, iqn,
+					  sizeof (iqn)) == 0) {
+			snprintf(shareopts, strlen(iqn)+6, "name=%s", iqn);
+
+			if (FSINFO(impl_share, iscsi_fstype)->active) {
+				needs_reshare = B_TRUE;
+				iscsi_disable_share(impl_share);
+			}
+		}
+	}
 
 	if (FSINFO(impl_share, iscsi_fstype)->active && old_shareopts != NULL &&
 	    strcmp(old_shareopts, shareopts) != 0) {
