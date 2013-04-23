@@ -105,12 +105,19 @@ iscsi_look_for_stuff(char *path, const char *needle, boolean_t check_dir, int in
 			if (check_dir && !S_ISDIR(eStat.st_mode))
 				continue;
 
-			if (index) {
-				if (strncmp(directory->d_name, needle, index) == 0)
-					strncpy(path3, path2, sizeof(path3));
+			if (needle != NULL) {
+				if (index) {
+					if (strncmp(directory->d_name, needle, index) == 0)
+						strncpy(path3, path2, sizeof(path3));
+				} else {
+					if (strcmp(directory->d_name, needle) == 0)
+						strncpy(path3, path2, sizeof(path3));
+				}
 			} else {
-				if (strcmp(directory->d_name, needle) == 0)
-					strncpy(path3, path2, sizeof(path3));
+				if (strcmp(directory->d_name, "mgmt") == 0) 
+					continue;
+
+				strncpy(path3, path2, sizeof(path3));
 			}
 
 			entries = (iscsi_dirs_t *)malloc(sizeof (iscsi_dirs_t));
@@ -512,11 +519,11 @@ iscsi_retrieve_targets_scst(void)
 {
 	char *buffer, *link = NULL, *dup_path, path[PATH_MAX], tmp_path[PATH_MAX];
 	int rc = SA_OK;
-	iscsi_dirs_t *entries1, *entries2;
+	iscsi_dirs_t *entries1, *entries2, *entries3;
 	iscsi_target_t *target, *new_targets = NULL;
 
 	/* For storing the share info */
-	char *tid = NULL, lun[5], *state = NULL, *blocksize = NULL;
+	char *tid = NULL, *lun = NULL, *state = NULL, *blocksize = NULL;
 	char *name = NULL, *iotype = NULL, *iomode = NULL, *dev_path = NULL,
 		 *device = NULL;
 
@@ -542,74 +549,81 @@ iscsi_retrieve_targets_scst(void)
 			iscsi_read_sysfs_value(tmp_path, &buffer);
 			tid = strdup(buffer);
 
-			/* TODO: Find 1-? for the folloing as well */
-			strcpy(lun, "0");
+			/* RETREIVE lun(s) */
+			snprintf(tmp_path, strlen(dup_path)+6,
+				 "%s/luns", dup_path);
+			entries3 = iscsi_look_for_stuff(tmp_path, NULL, B_TRUE, 0);
+			while (entries3 != NULL) {
+				lun = strdup(entries3->entry);
 
-			/* RETREIVE blocksize */
-			snprintf(tmp_path, strlen(dup_path)+25,
-				 "%s/luns/0/device/blocksize", dup_path);
-			iscsi_read_sysfs_value(tmp_path, &buffer);
-			blocksize = strdup(buffer); // TODO: If buffer=NULL, segfault
+				/* RETREIVE blocksize */
+				snprintf(tmp_path, strlen(dup_path)+25,
+					 "%s/luns/%s/device/blocksize", dup_path, lun);
+				iscsi_read_sysfs_value(tmp_path, &buffer);
+				blocksize = strdup(buffer); // TODO: If buffer=NULL, segfault
 
-			/* RETREIVE block device path */
-			snprintf(tmp_path, strlen(dup_path)+24,
-				 "%s/luns/0/device/filename", dup_path);
-			iscsi_read_sysfs_value(tmp_path, &buffer);
-			dev_path = strdup(buffer);
+				/* RETREIVE block device path */
+				snprintf(tmp_path, strlen(dup_path)+24,
+					 "%s/luns/%s/device/filename", dup_path, lun);
+				iscsi_read_sysfs_value(tmp_path, &buffer);
+				dev_path = strdup(buffer);
 
-			/* RETREIVE scst device name
-			 * trickier: '6550a239-iscsi1' (s@.*-@@) */
-			snprintf(tmp_path, strlen(dup_path)+26,
-				 "%s/luns/0/device/t10_dev_id", dup_path);
-			iscsi_read_sysfs_value(tmp_path, &buffer);
-			device = strstr(buffer, "-")+1;
+				/* RETREIVE scst device name
+				 * trickier: '6550a239-iscsi1' (s@.*-@@) */
+				snprintf(tmp_path, strlen(dup_path)+26,
+					 "%s/luns/%s/device/t10_dev_id", dup_path, lun);
+				iscsi_read_sysfs_value(tmp_path, &buffer);
+				device = strstr(buffer, "-")+1;
 
-			/* RETREIVE iotype
-			 * tricker: it's only availible in the link: */
-			// $SYSFS/targets/iscsi/$name/luns/0/device/handler
-			// => /sys/kernel/scst_tgt/handlers/vdisk_blockio
-			snprintf(tmp_path, strlen(dup_path)+23,
-				 "%s/luns/0/device/handler", dup_path);
+				/* RETREIVE iotype
+				 * tricker: it's only availible in the link: */
+				// $SYSFS/targets/iscsi/$name/luns/0/device/handler
+				// => /sys/kernel/scst_tgt/handlers/vdisk_blockio
+				snprintf(tmp_path, strlen(dup_path)+23,
+					 "%s/luns/%s/device/handler", dup_path, lun);
 
-			link = (char *) calloc(PATH_MAX, 1);
-			if (link == NULL) {
-				rc = SA_NO_MEMORY;
-				goto retrieve_targets_scst_out;
-			}
+				link = (char *) calloc(PATH_MAX, 1);
+				if (link == NULL) {
+					rc = SA_NO_MEMORY;
+					goto retrieve_targets_scst_out;
+				}
 
-			readlink(tmp_path, link, PATH_MAX);
-			link[strlen(link)] = '\0';
-			iotype = strstr(link, "_") + 1;
+				readlink(tmp_path, link, PATH_MAX);
+				link[strlen(link)] = '\0';
+				iotype = strstr(link, "_") + 1;
 
-			/* TODO: Retrieve iomode */
+				/* TODO: Retrieve iomode */
 
 
-			target = (iscsi_target_t *)malloc(sizeof (iscsi_target_t));
-			if (target == NULL) {
-				rc = SA_NO_MEMORY;
-				goto retrieve_targets_scst_out;
-			}
+				target = (iscsi_target_t *)malloc(sizeof (iscsi_target_t));
+				if (target == NULL) {
+					rc = SA_NO_MEMORY;
+					goto retrieve_targets_scst_out;
+				}
 
-			target->tid = atoi(tid);
-			target->lun = atoi(lun);
-			target->state = atoi(state);
-			target->blocksize = atoi(blocksize);
+				target->tid = atoi(tid);
+				target->lun = atoi(lun);
+				target->state = atoi(state);
+				target->blocksize = atoi(blocksize);
 
-			strncpy(target->name,   name,     strlen(name));
-			strncpy(target->path,   dev_path, strlen(dev_path));
-			strncpy(target->device, device,   strlen(device));
-			strncpy(target->iotype, iotype,   strlen(iotype));
-// TODO			strncpy(target->iomode, iomode,   strlen(iomode));
+				strncpy(target->name,   name,     strlen(name));
+				strncpy(target->path,   dev_path, strlen(dev_path));
+				strncpy(target->device, device,   strlen(device));
+				strncpy(target->iotype, iotype,   strlen(iotype));
+// TODO				strncpy(target->iomode, iomode,   strlen(iomode));
 
 #ifdef DEBUG
-			fprintf(stderr, "iscsi_retrieve_targets: target=%s, tid=%d, path=%s\n",
-				target->name, target->tid, target->path);
+				fprintf(stderr, "iscsi_retrieve_targets: target=%s, tid=%d, path=%s\n",
+					target->name, target->tid, target->path);
 #endif
 
-			/* Append the target to the list of new targets */
-			target->next = new_targets;
-			new_targets = target;
+				/* Append the target to the list of new targets */
+				target->next = new_targets;
+				new_targets = target;
 
+				/* Next entry in lun directory */
+				entries3 = entries3->next;
+			}
 
 			/* Next entry in target directory */
 			entries2 = entries2->next;
@@ -630,7 +644,7 @@ retrieve_targets_scst_out:
 static int
 iscsi_retrieve_targets(void)
 {
-	int rc;
+	int rc = SA_OK;
 
 	if (iscsi_implementation == 1)
 		rc = iscsi_retrieve_targets_iet();
@@ -1112,7 +1126,7 @@ iscsi_disable_share_one_scst(int tid)
 static int
 iscsi_disable_share_one(int tid)
 {
-	int rc;
+	int rc = SA_OK;
 
 	if (iscsi_implementation == 1)
 		rc = iscsi_disable_share_one_iet(tid);
