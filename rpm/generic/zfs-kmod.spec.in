@@ -16,9 +16,6 @@ Version:        @VERSION@
 Release:        @RELEASE@%{?dist}
 Summary:        Kernel module(s)
 
-%define spl	@SPL@
-%define ksrc	@LINUX@
-
 Group:          System Environment/Kernel
 License:        @ZFS_META_LICENSE@
 URL:            http://zfsonlinux.org/
