@@ -52,9 +52,6 @@ build
 tags
 TAGS
 cscope.*
-
-#
-# Packages
 *.rpm
 *.deb
 *.tar.gz
