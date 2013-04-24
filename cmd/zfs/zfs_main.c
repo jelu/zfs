@@ -5420,7 +5420,7 @@ get_one_dataset(zfs_handle_t *zhp, void *data)
 	}
 
 	/*
-	 * Interate over any nested datasets.
+	 * Iterate over any nested datasets.
 	 */
 	if (type == ZFS_TYPE_FILESYSTEM &&
 	    zfs_iter_filesystems(zhp, get_one_dataset, data) != 0) {
