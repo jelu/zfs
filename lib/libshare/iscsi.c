@@ -211,6 +211,9 @@ iscsi_generate_target(const char *path, char *iqn, size_t iqn_len)
 	int i;
 	FILE *domainname_fp = NULL, *iscsi_target_name_fp = NULL;
 
+	if (path == NULL)
+		return SA_SYSTEM_ERR;
+
 	iscsi_target_name_fp = fopen(TARGET_NAME_FILE, "r");
 	if (iscsi_target_name_fp == NULL) {
 		/* Generate a name using domain name and date etc */
@@ -234,17 +237,14 @@ iscsi_generate_target(const char *path, char *iqn, size_t iqn_len)
 			if (domainname_fp == NULL) {
 				fprintf(stderr, "ERROR: Can't open %s: %s\n",
 					DOMAINNAME_FILE, strerror(errno));
-				return -1;
+				return SA_SYSTEM_ERR;
 			}
 
 			if (fgets(buffer, sizeof (buffer), domainname_fp) != NULL) {
 				strncpy(domain, buffer, sizeof (domain)-1);
 				domain[strlen(domain)-1] = '\0';
-			} else {
-				fprintf(stderr, "ERROR: Can't read from %s: %s\n",
-					DOMAINNAME_FILE, strerror(errno));
-				return -1;
-			}
+			} else
+				return SA_SYSTEM_ERR;
 
 			fclose(domainname_fp);
 #ifdef HAVE_GETDOMAINNAME
@@ -254,7 +254,7 @@ iscsi_generate_target(const char *path, char *iqn, size_t iqn_len)
 		/* Tripple check that we really have a domainname! */
 		if ((strlen(domain) == 0) || (strcmp(domain, "(none)") == 0)) {
 			fprintf(stderr, "ERROR: Can't retreive domainname!\n");
-			return -1;
+			return SA_SYSTEM_ERR;
 		}
 
 		/* Reverse the domainname ('bayour.com' => 'com.bayour') */
@@ -285,11 +285,8 @@ iscsi_generate_target(const char *path, char *iqn, size_t iqn_len)
 		if (fgets(buffer, sizeof (buffer), iscsi_target_name_fp) != NULL) {
 			strncpy(file_iqn, buffer, sizeof (file_iqn)-1);
 			file_iqn[strlen(file_iqn)-1] = '\0';
-		} else {
-			fprintf(stderr, "ERROR: Can't read from %s: %s\n", TARGET_NAME_FILE,
-				strerror(errno));
-			return -1;
-		}
+		} else
+			return SA_SYSTEM_ERR;
 
 		fclose(iscsi_target_name_fp);
 	}
@@ -334,7 +331,180 @@ iscsi_generate_device_name(char *name, char **device)
 	*device = strdup(string);
 }
 
-/* iscsi_retrieve_targets_iet() retrieves list of iSCSI targets - IET version  */
+/* Reads the file and register if a tid have a sid. Save the value in iscsi_targets->state */
+static iscsi_session_t *
+iscsi_retrieve_sessions_iet(void)
+{
+	FILE *iscsi_volumes_fp = NULL;
+	char buffer[512];
+	char *line, *token, *key, *value, *colon, *dup_value;
+	int buffer_len, rc = SA_OK;
+	iscsi_session_t *session, *new_session = NULL;
+	enum { ISCSI_SESSION, ISCSI_SID, ISCSI_CID } type;
+
+	/* For storing the share info */
+	char *tid = NULL, *name = NULL, *sid = NULL, *initiator = NULL, *cid = NULL,
+		*ip = NULL, *state = NULL, *hd = NULL, *dd = NULL;
+
+	/* Open file with targets */
+	iscsi_volumes_fp = fopen(PROC_IET_SESSION, "r");
+	if (iscsi_volumes_fp == NULL) {
+		rc = SA_SYSTEM_ERR;
+		goto retrieve_sessions_iet_out;
+	}
+
+	/* Load the file... */
+	while (fgets(buffer, sizeof (buffer), iscsi_volumes_fp) != NULL) {
+		/* Trim trailing new-line character(s). */
+		buffer_len = strlen(buffer);
+		while (buffer[buffer_len - 1] == '\r' ||
+		       buffer[buffer_len - 1] == '\n')
+			buffer[buffer_len - 1] = '\0';
+
+		if (buffer[0] != '\t') {
+			/*
+			 * Line doesn't start with a TAB which means this is a
+			 * session definition
+			 */
+			line = buffer;
+			type = ISCSI_SESSION;
+
+			free(tid);
+			tid = NULL;
+
+			free(name);
+			name = NULL;
+		} else if (buffer[0] == '\t' && buffer[1] == '\t') {
+			/* Start with two tabs - CID definition */
+			line = buffer + 2;
+			type = ISCSI_CID;
+
+			free(cid);
+			cid = NULL;
+
+			free(ip);
+			ip = NULL;
+
+			free(state);
+			state = NULL;
+
+			free(hd);
+			hd = NULL;
+
+			free(dd);
+			dd = NULL;
+		} else {
+			/* Start with one tab - SID definition */
+			line = buffer + 1;
+			type = ISCSI_SID;
+
+			free(sid);
+			sid = NULL;
+
+			free(initiator);
+			initiator = NULL;
+		}
+
+		/* Get each option, which is separated by space */
+		/* token='tid:18' */
+		token = strtok(line, " ");
+		while (token != NULL) {
+			colon = strchr(token, ':');
+
+			if (colon == NULL)
+				goto next_sessions;
+
+			key = token;
+			value = colon + 1;
+			*colon = '\0';
+
+			dup_value = strdup(value);
+
+			if (dup_value == NULL) {
+				rc = SA_NO_MEMORY;
+				goto retrieve_sessions_iet_out;
+			}
+
+			if (type == ISCSI_SESSION) {
+				if (strcmp(key, "tid") == 0)
+					tid = dup_value;
+				else if (strcmp(key, "name") == 0)
+					name = dup_value;
+				else
+					free(dup_value);
+			} else if (type == ISCSI_SID) {
+				if (strcmp(key, "sid") == 0)
+					sid = dup_value;
+				else if (strcmp(key, "initiator") == 0)
+					initiator = dup_value;
+				else
+					free(dup_value);
+			} else {
+				if (strcmp(key, "cid") == 0)
+					cid = dup_value;
+				else if (strcmp(key, "ip") == 0)
+					ip = dup_value;
+				else if (strcmp(key, "state") == 0)
+					state = dup_value;
+				else if (strcmp(key, "hd") == 0)
+					hd = dup_value;
+				else if (strcmp(key, "dd") == 0)
+					dd = dup_value;
+				else
+					free(dup_value);
+			}
+
+next_sessions:
+			token = strtok(NULL, " ");
+		}
+
+		if (tid == NULL || sid == NULL || cid == NULL || name == NULL ||
+		    initiator == NULL || ip == NULL || state == NULL || dd == NULL ||
+		    hd == NULL)
+			continue; /* Incomplete session definition */
+
+		session = (iscsi_session_t *)malloc(sizeof (iscsi_session_t));
+		if (session == NULL) {
+			rc = SA_NO_MEMORY;
+			goto retrieve_sessions_iet_out;
+		}
+
+		/* Save the values in the struct */
+		session->tid = atoi(tid);
+		session->sid = atoi(sid);
+		session->cid = atoi(cid);
+
+		strncpy(session->name, name, sizeof (session->name));
+		strncpy(session->initiator, initiator, sizeof (session->initiator));
+		strncpy(session->ip, ip, sizeof (session->ip));
+		strncpy(session->hd, hd, sizeof (session->hd));
+		strncpy(session->dd, dd, sizeof (session->dd));
+
+		if (strcmp(state, "active") == 0)
+			session->state = 1;
+		else
+			session->state = 0;
+
+#ifdef DEBUG
+		fprintf(stderr, "iscsi_retrieve_sessions: target=%s, tid=%d, "
+			"sid=%d, cid=%d, initiator=%s, ip=%s, state=%d\n",
+			session->name, session->tid, session->sid, session->cid,
+			session->initiator, session->ip, session->state);
+#endif
+
+		/* Append the sessions to the list of new sessions */
+		session->next = new_session;
+		new_session = session;
+	}
+
+retrieve_sessions_iet_out:
+	if (iscsi_volumes_fp != NULL)
+		fclose(iscsi_volumes_fp);
+
+	return new_session;
+}
+
+/* iscsi_retrieve_targets_iet() retrieves list of iSCSI targets - IET version */
 static int
 iscsi_retrieve_targets_iet(void)
 {
@@ -345,8 +515,12 @@ iscsi_retrieve_targets_iet(void)
 	char *iotype = NULL, *iomode = NULL, *blocks = NULL;
 	char *blocksize = NULL, *path = NULL;
 	iscsi_target_t *target, *new_targets = NULL;
+	iscsi_session_t *session, *sessions;
 	int buffer_len, rc = SA_OK;
 	enum { ISCSI_TARGET, ISCSI_LUN } type;
+
+	/* Get all sessions */
+	sessions = iscsi_retrieve_sessions_iet();
 
 	/* Open file with targets */
 	iscsi_volumes_fp = fopen(PROC_IET_VOLUME, "r");
@@ -357,12 +531,6 @@ iscsi_retrieve_targets_iet(void)
 
 	/* Load the file... */
 	while (fgets(buffer, sizeof (buffer), iscsi_volumes_fp) != NULL) {
-		/* tid:1 name:iqn.2011-12.com.bayour:storage.astrix
-		 *      lun:0 state:0 iotype:fileio iomode:wt \
-		 *	blocks:31457280 blocksize:512 \
-		 *	path:/dev/zvol/tank/VMs/Astrix
-		 */
-
 		/* Trim trailing new-line character(s). */
 		buffer_len = strlen(buffer);
 		while (buffer[buffer_len - 1] == '\r' ||
@@ -416,7 +584,7 @@ iscsi_retrieve_targets_iet(void)
 			colon = strchr(token, ':');
 
 			if (colon == NULL)
-				goto next;
+				goto next_targets;
 
 			key = token;
 			value = colon + 1;
@@ -455,7 +623,7 @@ iscsi_retrieve_targets_iet(void)
 					free(dup_value);
 			}
 
-next:
+next_targets:
 			token = strtok(NULL, " ");
 		}
 
@@ -483,11 +651,25 @@ next:
 		target->blocksize = atoi(blocksize);
 		strncpy(target->path, path, sizeof (target->path));
 
+		/* Link the session here */
+		target->session = NULL;
+		session = sessions;
+		while (session != NULL) {
+			if (session->tid == target->tid) {
+				target->session = session;
+
+				break;
+			}
+
+			session = session->next;
+		}
+
 #ifdef DEBUG
-		fprintf(stderr, "iscsi_retrieve_targets: target=%s, tid=%d, path=%s\n",
-			target->name, target->tid, target->path);
+		fprintf(stderr, "iscsi_retrieve_targets: target=%s, tid=%d, path=%s, active=%d\n",
+			target->name, target->tid, target->path,
+			target->session ? target->session->state : -1);
 #endif
-		
+
 		/* Append the target to the list of new targets */
 		target->next = new_targets;
 		new_targets = target;
@@ -796,7 +978,7 @@ iscsi_get_shareopts(sa_share_impl_t impl_share, const char *shareopts,
 	} else
 		new_opts->name[0] = '\0';
 
-	if (impl_share) {
+	if (impl_share && impl_share->handle && impl_share->handle->zfs_libhandle) {
 		/* Get the volume blocksize */
 		zhp = zfs_open(impl_share->handle->zfs_libhandle,
 			       impl_share->dataset,
@@ -839,11 +1021,6 @@ iscsi_enable_share_one_iet(sa_share_impl_t impl_share, int tid)
 	iscsi_shareopts_t *opts;
 	int rc;
 
-#ifdef DEBUG
-	fprintf(stderr, "iscsi_enable_share_one: tid=%d, sharepath=%s\n",
-		tid, impl_share->sharepath);
-#endif
-
 	opts = (iscsi_shareopts_t *) malloc(sizeof (iscsi_shareopts_t));
 	if (opts == NULL)
 		return SA_NO_MEMORY;
@@ -857,8 +1034,10 @@ iscsi_enable_share_one_iet(sa_share_impl_t impl_share, int tid)
 	}
 
 #ifdef DEBUG
-	fprintf(stderr, "iscsi_enable_share_one: name=%s, iomode=%s, type=%s, lun=%d, blocksize=%d\n",
-		opts->name, opts->iomode, opts->type, opts->lun, opts->blocksize);
+	fprintf(stderr, "iscsi_enable_share_one: name=%s, tid=%d, sharepath=%s, "
+		"iomode=%s, type=%s, lun=%d, blocksize=%d\n",
+		opts->name, tid, impl_share->sharepath, opts->iomode,
+		opts->type, opts->lun, opts->blocksize);
 #endif
 
 	/*
@@ -1044,6 +1223,9 @@ iscsi_enable_share(sa_share_impl_t impl_share)
 	while (iscsi_targets != NULL) {
 		tid = iscsi_targets->tid;
 
+		if (iscsi_targets->session && iscsi_targets->session->state)
+			return SA_OK;
+
 		iscsi_targets = iscsi_targets->next;
 	}
 	tid++; /* Next TID is/should be availible */
@@ -1149,13 +1331,23 @@ iscsi_disable_share(sa_share_impl_t impl_share)
 
 	/* Retreive the list of (possible) active shares */
 	iscsi_retrieve_targets();
-
 	while (iscsi_targets != NULL) {
 		if (strcmp(impl_share->sharepath, iscsi_targets->path) == 0) {
 #ifdef DEBUG
 			fprintf(stderr, "iscsi_disable_share: target=%s, tid=%d, path=%s\n",
 				iscsi_targets->name, iscsi_targets->tid, iscsi_targets->path);
 #endif
+
+			if (iscsi_targets->session && iscsi_targets->session->state) {
+				/**
+				 * XXX: This will wail twice because sa_disable_share is called
+				 *      twice - once with correct protocol (iscsi) and once with
+				 *      protocol=NULL
+				 */
+				fprintf(stderr, "Can't disable share - already active with shares\n");
+				return SA_OK;
+			}
+
 			return iscsi_disable_share_one(iscsi_targets->tid);
 		}
 
@@ -1227,20 +1419,23 @@ iscsi_update_shareopts(sa_share_impl_t impl_share, const char *resource,
 		       const char *shareopts)
 {
 	char *shareopts_dup, *old_shareopts, iqn[255];;
-	boolean_t needs_reshare = B_FALSE;
+	boolean_t needs_reshare = B_FALSE, have_active_sessions = B_FALSE;
+	
+	if(impl_share->dataset == NULL)
+		return B_FALSE;
 
-	if(!impl_share)
-		return SA_SYSTEM_ERR;
+	/* Does this target have active sessions? */
+	iscsi_retrieve_targets();
 
-// XXX
-#ifdef DEBUG
-	fprintf(stderr, "iscsi_update_shareopts: share=%s;%s,"
-		" active=%d, new_shareopts=%s, old_shareopts=%s\n",
-		impl_share->dataset, impl_share->sharepath,
-		FSINFO(impl_share, iscsi_fstype)->active, shareopts,
-		FSINFO(impl_share, iscsi_fstype)->shareopts ?
-		FSINFO(impl_share, iscsi_fstype)->shareopts : "null");
-#endif
+	while (iscsi_targets != NULL) {
+		if ((strcmp(impl_share->sharepath, iscsi_targets->path) == 0) &&
+		    iscsi_targets->session && iscsi_targets->session->state) {
+			have_active_sessions = B_TRUE;
+			break;
+		}
+
+		iscsi_targets = iscsi_targets->next;
+	}
 
 	FSINFO(impl_share, iscsi_fstype)->active =
 		iscsi_is_share_active(impl_share);
@@ -1252,19 +1447,28 @@ iscsi_update_shareopts(sa_share_impl_t impl_share, const char *resource,
 		 * 'next month' (when it's regenerated again) .
 		 * NOTE: Does not change shareiscsi option, only sharetab!
 		 */
-		if (iscsi_generate_target(impl_share->dataset, iqn,
-					  sizeof (iqn)) == 0) {
+		if (iscsi_generate_target(impl_share->dataset, iqn, sizeof (iqn)) == 0)
 			snprintf(shareopts, strlen(iqn)+6, "name=%s", iqn);
-
-			if (FSINFO(impl_share, iscsi_fstype)->active) {
-				needs_reshare = B_TRUE;
-				iscsi_disable_share(impl_share);
-			}
-		}
 	}
 
+#ifdef DEBUG
+	fprintf(stderr, "iscsi_update_shareopts: share=%s;%s,"
+		" active=%d, have_active_sessions=%d, new_shareopts=%s, old_shareopts=%s\n",
+		impl_share->dataset, impl_share->sharepath,
+		FSINFO(impl_share, iscsi_fstype)->active, have_active_sessions,
+		shareopts,
+		FSINFO(impl_share, iscsi_fstype)->shareopts ?
+		FSINFO(impl_share, iscsi_fstype)->shareopts : "null");
+#endif
+
+	/* RESHARE if:
+	 *  is active
+	 *  have old shareopts
+	 *  old shareopts != shareopts
+	 *  no active sessions
+	 */
 	if (FSINFO(impl_share, iscsi_fstype)->active && old_shareopts != NULL &&
-	    strcmp(old_shareopts, shareopts) != 0) {
+	    strcmp(old_shareopts, shareopts) != 0 && !have_active_sessions) {
 		needs_reshare = B_TRUE;
 		iscsi_disable_share(impl_share);
 	}
