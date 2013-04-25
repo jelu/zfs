@@ -142,18 +142,29 @@ look_out:
 static int
 iscsi_read_sysfs_value(char *path, char **value)
 {
-	int rc = SA_SYSTEM_ERR;
+	int rc = SA_SYSTEM_ERR, buffer_len;
 	char buffer[255];
 	FILE *scst_sysfs_file_fp = NULL;
 
 	*value = NULL;
 
+#ifdef DEBUG
+	fprintf(stderr, "iscsi_read_sysfs_value: path=%s", path);
+#endif
+
 	scst_sysfs_file_fp = fopen(path, "r");
 	if (scst_sysfs_file_fp != NULL) {
 		if (fgets(buffer, sizeof (buffer), scst_sysfs_file_fp) != NULL) {
-			buffer[strlen(buffer)-1] = '\0';
+			buffer_len = strlen(buffer);
+			while (buffer[buffer_len - 1] == '\r' ||
+			       buffer[buffer_len - 1] == '\n')
+				buffer[buffer_len - 1] = '\0';
 
 			*value = strdup(buffer);
+
+#ifdef DEBUG
+			fprintf(stderr, ", value=%s", *value);
+#endif
 
 			rc = SA_OK;
 		}
@@ -161,6 +172,9 @@ iscsi_read_sysfs_value(char *path, char **value)
 		fclose(scst_sysfs_file_fp);
 	}
 
+#ifdef DEBUG
+	fprintf(stderr, "\n");
+#endif
 	return rc;
 }
 
@@ -504,6 +518,132 @@ retrieve_sessions_iet_out:
 	return new_session;
 }
 
+// name: 	$SYSFS/targets/iscsi/$name
+// tid:		$SYSFS/targets/iscsi/$name/tid
+// initiator:	$SYSFS/targets/iscsi/$name/sessions/$initiator/
+// sid:		$SYSFS/targets/iscsi/$name/sessions/$initiator/sid
+// cid:		$SYSFS/targets/iscsi/$name/sessions/$initiator/$ip/cid
+// ip:		$SYSFS/targets/iscsi/$name/sessions/$initiator/$ip/ip
+// state:	$SYSFS/targets/iscsi/$name/sessions/$initiator/$ip/state
+static iscsi_session_t *
+iscsi_retrieve_sessions_scst(void)
+{
+	char path[PATH_MAX], tmp_path[PATH_MAX], *dup_path, *buffer;
+	iscsi_dirs_t *entries1, *entries2, *entries3;
+	iscsi_session_t *session, *new_session = NULL;
+	struct stat eStat;
+
+	/* For storing the share info */
+	char *tid = NULL, *sid = NULL, *cid = NULL, *name = NULL, *initiator = NULL,
+		*ip = NULL, *state = NULL;
+
+	/* DIR: $SYSFS/targets/iscsi/$name*/
+	snprintf(path, sizeof (path), "%s/targets/iscsi", SYSFS_SCST);
+	entries1 = iscsi_look_for_stuff(path, "iqn.", B_TRUE, 4);
+	while (entries1 != NULL) {
+		/* DIR: $SYSFS/targets/iscsi/$name */
+		dup_path = entries1->path;
+
+		/* RETREIVE name */
+		name = strdup(entries1->entry);
+
+		/* RETREIVE tid */
+		snprintf(tmp_path, strlen(dup_path)+5, "%s/tid", dup_path);
+		iscsi_read_sysfs_value(tmp_path, &buffer);
+		tid = strdup(buffer);
+
+		snprintf(path, strlen(dup_path)+10, "%s/sessions", dup_path);
+		entries2 = iscsi_look_for_stuff(path, "iqn.", B_TRUE, 4);
+		while (entries2 != NULL) {
+			/* DIR: $SYSFS/targets/iscsi/$name/sessions/$initiator */
+			dup_path = entries2->path;
+
+			/* RETREIVE initiator */
+			initiator = strdup(entries2->entry);
+
+			/* RETREIVE sid */
+			snprintf(tmp_path, strlen(dup_path)+5,
+				 "%s/sid", dup_path);
+			iscsi_read_sysfs_value(tmp_path, &buffer);
+			sid = strdup(buffer);
+
+			entries3 = iscsi_look_for_stuff(dup_path, NULL, B_TRUE, 4);
+			while (entries3 != NULL) {
+				/* DIR: $SYSFS/targets/iscsi/$name/sessions/$initiator/$ip */
+				snprintf(path, sizeof (path), "%s/cid", entries3->path);
+				if (stat(path, &eStat) == -1)
+					/* Not a IP directory */
+					break;
+
+				dup_path = entries3->path;
+
+				/* RETREIVE ip */
+				ip = strdup(entries3->entry);
+
+				/* RETREIVE cid */
+				snprintf(tmp_path, strlen(dup_path)+5,
+					 "%s/cid", dup_path);
+				iscsi_read_sysfs_value(tmp_path, &buffer);
+				cid = strdup(buffer);
+
+				/* RETREIVE state */
+				snprintf(tmp_path, strlen(dup_path)+7,
+					 "%s/state", dup_path);
+				iscsi_read_sysfs_value(tmp_path, &buffer);
+				state = strdup(buffer);
+
+				/* SAVE values */
+				if (tid == NULL || sid == NULL || cid == NULL ||
+				    name == NULL || initiator == NULL || ip == NULL ||
+				    state == NULL)
+					continue; /* Incomplete session definition */
+
+				session = (iscsi_session_t *)malloc(sizeof (iscsi_session_t));
+				if (session == NULL)
+					exit(SA_NO_MEMORY);
+
+				session->tid = atoi(tid);
+				session->sid = atoi(sid);
+				session->cid = atoi(cid);
+
+				strncpy(session->name, name, sizeof (session->name));
+				strncpy(session->initiator, initiator, sizeof (session->initiator));
+				strncpy(session->ip, ip, sizeof (session->ip));
+
+				session->hd[0] = '\0';
+				session->dd[0] = '\0';
+
+				if (strncmp(state, "established", 11) == 0)
+					session->state = 1;
+				else
+					session->state = 0;
+
+#ifdef DEBUG
+				fprintf(stderr, "iscsi_retrieve_sessions: target=%s, tid=%d, "
+					"sid=%d, cid=%d, initiator=%s, ip=%s, state=%d\n",
+					session->name, session->tid, session->sid, session->cid,
+					session->initiator, session->ip, session->state);
+#endif
+
+				/* Append the sessions to the list of new sessions */
+				session->next = new_session;
+				new_session = session;
+
+				/* Next entry in initiator ip directory */
+				entries3 = entries3->next;
+			}
+
+			/* Next entry in initiator directory */
+			entries2 = entries2->next;
+		}
+
+		/* Next entry in target directory */
+		entries1 = entries1->next;
+	}
+
+	return new_session;
+}
+
 /* iscsi_retrieve_targets_iet() retrieves list of iSCSI targets - IET version */
 static int
 iscsi_retrieve_targets_iet(void)
@@ -703,14 +843,18 @@ iscsi_retrieve_targets_scst(void)
 	int rc = SA_OK;
 	iscsi_dirs_t *entries1, *entries2, *entries3;
 	iscsi_target_t *target, *new_targets = NULL;
+	iscsi_session_t *session, *sessions;
 
 	/* For storing the share info */
 	char *tid = NULL, *lun = NULL, *state = NULL, *blocksize = NULL;
 	char *name = NULL, *iotype = NULL, *iomode = NULL, *dev_path = NULL,
 		 *device = NULL;
 
+	/* Get all sessions */
+	sessions = iscsi_retrieve_sessions_scst();
+
 	/* DIR: /sys/kernel/scst_tgt/targets */
-	snprintf(path, strlen(SYSFS_SCST)+9, "%s/targets", SYSFS_SCST);
+	snprintf(path, sizeof (path), "%s/targets", SYSFS_SCST);
 	entries1 = iscsi_look_for_stuff(path, "iscsi", B_TRUE, 0);
 	while (entries1 != NULL) {
 		entries2 = iscsi_look_for_stuff(entries1->path, "iqn.", B_TRUE, 4);
@@ -793,6 +937,17 @@ iscsi_retrieve_targets_scst(void)
 				strncpy(target->device, device,   strlen(device));
 				strncpy(target->iotype, iotype,   strlen(iotype));
 // TODO				strncpy(target->iomode, iomode,   strlen(iomode));
+
+				target->session = NULL;
+				session = sessions;
+				while (session != NULL) {
+					if (session->tid == target->tid) {
+						target->session = session;
+						break;
+					}
+
+					session = session->next;
+				}
 
 #ifdef DEBUG
 				fprintf(stderr, "iscsi_retrieve_targets: target=%s, tid=%d, path=%s\n",
@@ -1344,7 +1499,7 @@ iscsi_disable_share(sa_share_impl_t impl_share)
 				 *      twice - once with correct protocol (iscsi) and once with
 				 *      protocol=NULL
 				 */
-				fprintf(stderr, "Can't disable share - already active with shares\n");
+				fprintf(stderr, "Can't unshare - already active with shares\n");
 				return SA_OK;
 			}
 
