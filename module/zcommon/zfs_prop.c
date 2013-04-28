@@ -358,7 +358,8 @@ zfs_prop_init(void)
 	zprop_register_string(ZFS_PROP_KEYSOURCE, "keysource", "none",
 	    PROP_INHERIT, ZFS_TYPE_DATASET,
 	    "raw | hex | passphrase,"
-	    "prompt | file://<path> | NO pkcs11: | NO https://<path>", "KEYSOURCE");
+	    "prompt | file://<path> | NO pkcs11: | https://<path>",
+	    "KEYSOURCE");
 
 	/* readonly number properties */
 	zprop_register_number(ZFS_PROP_USED, "used", 0, PROP_READONLY,
@@ -440,9 +441,8 @@ zfs_prop_init(void)
 	zprop_register_hidden(ZFS_PROP_PRIVATE, "priv_prop",
 	    PROP_TYPE_NUMBER, PROP_READONLY, ZFS_TYPE_FILESYSTEM,
 	    "PRIV_PROP");
-    zprop_register_hidden(ZFS_PROP_SALT, "salt", PROP_TYPE_NUMBER,
-
-        PROP_READONLY, ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME, "SALT");
+	zprop_register_hidden(ZFS_PROP_SALT, "salt", PROP_TYPE_NUMBER,
+	    PROP_READONLY, ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME, "SALT");
 
 	/* oddball properties */
 	zprop_register_impl(ZFS_PROP_CREATION, "creation", PROP_TYPE_NUMBER, 0,
