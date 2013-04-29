@@ -2,7 +2,7 @@
 
 SYSFS=/sys/kernel/scst_tgt
 
-BASETANK="share"
+BASETANK=`zpool list -H | sed 's@	.*@@'`
 DATE=`date "+%Y%m%d"`
 
 TEST_ISCSI=0
