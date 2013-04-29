@@ -367,7 +367,7 @@ Deduplication is the process for removing redundant data at the block-level, red
 .SS "Encryption"
 .sp
 .LP
-For a full description of ZFS encryption and the ZFS encryption syntax, see \fBzfs_encrypt\fR(1M).
+For a full description of ZFS encryption and the ZFS encryption syntax, see \fBzfs_encrypt\fR(1).
 .SS "Native Properties"
 .sp
 .LP
@@ -1355,7 +1355,7 @@ Indicates whether the file system should reject file names that include characte
 .ad
 .sp .6
 .RS 4n
-For more information, see \fBzfs_encrypt\fR(1M).
+For more information, see \fBzfs_encrypt\fR(1).
 .RE
 
 .sp
@@ -1369,7 +1369,7 @@ The following property must be specified at creation time and can modified by us
 .ad
 .sp .6
 .RS 4n
-For more information, see \fBzfs_encrypt\fR(1M).
+For more information, see \fBzfs_encrypt\fR(1).
 .RE
 
 .sp
@@ -1417,7 +1417,7 @@ with the \fBzfs create\fR command set up and enable the swap area using the
 \fBZFS\fR file system. A \fBZFS\fR swap file configuration is not supported.
 .sp
 .LP
-You can encrypt a ZFS volume used as a swap device by specifying the \fBencryption\fR property for that device and specifying the \fBencrypted\fR option in \fBvfstab\fR(4). For more information about the encryption property, see \fBzfs_encrypt\fR(1M).
+You can encrypt a ZFS volume used as a swap device by specifying the \fBencryption\fR property for that device and specifying the \fBencrypted\fR option in \fBvfstab\fR(4). For more information about the encryption property, see \fBzfs_encrypt\fR(1).
 .SH SUBCOMMANDS
 .sp
 .LP
@@ -3081,7 +3081,7 @@ Display the path's inode change time as the first column of output.
 .ad
 .sp .6
 .RS 4n
-For a full description of the \fBzfs key\fR syntax and examples, see \fBzfs_encrypt\fR(1M).
+For a full description of the \fBzfs key\fR syntax and examples, see \fBzfs_encrypt\fR(1).
 .RE
 
 .SH EXAMPLES
@@ -3621,4 +3621,4 @@ Invalid command line options were specified.
 .SH SEE ALSO
 .sp
 .LP
-\fBchmod\fR(2), \fBfsync\fR(2), \fBgzip\fR(1), \fBmount\fR(8), \fBssh\fR(1), \fBstat\fR(2), \fBwrite\fR(2), \fBzpool\fR(8), \fBietd.conf\fR(8)
+\fBchmod\fR(2), \fBfsync\fR(2), \fBgzip\fR(1), \fBmount\fR(8), \fBssh\fR(1), \fBstat\fR(2), \fBwrite\fR(2), \fBzpool\fR(8), \fBietd.conf\fR(8), \fBzfs_encrypt\fR(1)
