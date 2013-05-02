@@ -797,6 +797,7 @@ next_targets:
 		while (session != NULL) {
 			if (session->tid == target->tid) {
 				target->session = session;
+				target->session->next = NULL;
 
 				break;
 			}
@@ -1377,9 +1378,6 @@ iscsi_enable_share(sa_share_impl_t impl_share)
 	/* Go through list of targets, get next avail TID. */
 	while (iscsi_targets != NULL) {
 		tid = iscsi_targets->tid;
-
-		if (iscsi_targets->session && iscsi_targets->session->state)
-			return SA_OK;
 
 		iscsi_targets = iscsi_targets->next;
 	}
