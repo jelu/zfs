@@ -235,7 +235,6 @@ changelist_postfix(prop_changelist_t *clp)
 		    ((sharenfs || sharesmb || shareiscsi || clp->cl_waslegacy) &&
 		    (zfs_prop_get_int(cn->cn_handle,
 		    ZFS_PROP_CANMOUNT) == ZFS_CANMOUNT_ON)))) {
-
 			if (zfs_mount(cn->cn_handle, NULL, 0) != 0)
 				errors++;
 			else
@@ -255,10 +254,16 @@ changelist_postfix(prop_changelist_t *clp)
 			errors += zfs_share_smb(cn->cn_handle);
 		else if (cn->cn_shared || clp->cl_waslegacy)
 			errors += zfs_unshare_smb(cn->cn_handle, NULL);
-		if (shareiscsi && mounted)
+
+		/* XXX: This is wrong somehow - needs to be fixed properly.
+		 *      In practice it works, it just looks wrong (considering
+		 *      above code... */
+		if (shareiscsi && !cn->cn_shared)
 			errors += zfs_share_iscsi(cn->cn_handle);
-		else if (cn->cn_shared || clp->cl_waslegacy)
+		if (cn->cn_shared || clp->cl_waslegacy) {
 			errors += zfs_unshare_iscsi(cn->cn_handle, NULL);
+			errors += zfs_share_iscsi(cn->cn_handle);
+		}
 	}
 
 	return (errors ? -1 : 0);
