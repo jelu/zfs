@@ -30,7 +30,7 @@
 #define IETM_CMD_PATH "/usr/sbin/ietadm"
 #define DOMAINNAME_FILE "/etc/domainname"
 #define TARGET_NAME_FILE "/etc/iscsi_target_id"
-#define EXTRA_SHARE_SCRIPT "/sbin/zfs_share_iscsi"
+#define EXTRA_ISCSI_SHARE_SCRIPT "/sbin/zfs_share_iscsi"
 
 /**
  * tid:1 name:iqn.2012-11.com.bayour:share.tests.iscsi1
@@ -81,8 +81,8 @@ typedef struct iscsi_target_s {
         char    name[255];      /* Target Name */
         int     lun;            /* Target LUN */
         int     state;          /* Target State */
-        char    iotype[3];      /* Target IO Type */
-        char    iomode[20];     /* Target IO Mode */
+        char    iotype[8];      /* Target IO Type - fileio, blockio, nullio, disk, tape */
+        char    iomode[3];      /* Target IO Mode - wb, wt, ro */
         int     blocks;         /* Target Size (blocks) */
         int     blocksize;      /* Target Block Size (bytes) */
         char    path[PATH_MAX];	/* Target Path */

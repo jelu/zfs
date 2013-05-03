@@ -37,13 +37,17 @@
  *        zfs set shareiscsi=on tank/test
  *        zfs share tank/test
  * 
- * The driver will execute the following commands (example!):
+ * The driver will execute the following commands (example!) - IET version:
  * 
  *   /usr/sbin/ietadm --op new --tid 1 --params 
  *	Name=iqn.2012-01.com.bayour:tank.test1
  *   /usr/sbin/ietadm --op new --tid 1 --lun 0 --params 
  *	Path=/dev/zvol/tank/test,Type=fileio
- * 
+ *
+ * If SCST is the iSCSI target of choise, ZoL will read and modify appropriate
+ * files below /sys/kernel/scst_tgt. See iscsi_retrieve_targets_scst() for
+ * details.
+ *
  * It (the driver) will automatically calculate the TID and IQN and use only
  * the ZVOL (in this case 'tank/test') in the command lines.
  */
@@ -63,6 +67,7 @@
 #include "iscsi.h"
 
 static boolean_t iscsi_available(void);
+static boolean_t iscsi_is_share_active(sa_share_impl_t);
 
 static sa_fstype_t *iscsi_fstype;
 
@@ -383,21 +388,23 @@ iscsi_retrieve_sessions_iet(void)
 			line = buffer;
 			type = ISCSI_SESSION;
 
+			free(name);
+			name = NULL;
+
 			free(tid);
 			tid = NULL;
 
-			free(name);
-			name = NULL;
-		} else if (buffer[0] == '\t' && buffer[1] == '\t') {
-			/* Start with two tabs - CID definition */
-			line = buffer + 2;
-			type = ISCSI_CID;
+			free(sid);
+			sid = NULL;
 
 			free(cid);
 			cid = NULL;
 
 			free(ip);
 			ip = NULL;
+
+			free(initiator);
+			initiator = NULL;
 
 			free(state);
 			state = NULL;
@@ -407,16 +414,14 @@ iscsi_retrieve_sessions_iet(void)
 
 			free(dd);
 			dd = NULL;
+		} else if (buffer[0] == '\t' && buffer[1] == '\t') {
+			/* Start with two tabs - CID definition */
+			line = buffer + 2;
+			type = ISCSI_CID;
 		} else {
 			/* Start with one tab - SID definition */
 			line = buffer + 1;
 			type = ISCSI_SID;
-
-			free(sid);
-			sid = NULL;
-
-			free(initiator);
-			initiator = NULL;
 		}
 
 		/* Get each option, which is separated by space */
@@ -848,8 +853,7 @@ iscsi_retrieve_targets_scst(void)
 
 	/* For storing the share info */
 	char *tid = NULL, *lun = NULL, *state = NULL, *blocksize = NULL;
-	char *name = NULL, *iotype = NULL, *iomode = NULL, *dev_path = NULL,
-		 *device = NULL;
+	char *name = NULL, *iotype = NULL, *dev_path = NULL, *device = NULL;
 
 	/* Get all sessions */
 	sessions = iscsi_retrieve_sessions_scst();
@@ -933,11 +937,11 @@ iscsi_retrieve_targets_scst(void)
 				target->state = atoi(state);
 				target->blocksize = atoi(blocksize);
 
-				strncpy(target->name,   name,     strlen(name));
-				strncpy(target->path,   dev_path, strlen(dev_path));
-				strncpy(target->device, device,   strlen(device));
-				strncpy(target->iotype, iotype,   strlen(iotype));
-// TODO				strncpy(target->iomode, iomode,   strlen(iomode));
+				strncpy(target->name,   name,     sizeof (target->name));
+				strncpy(target->path,   dev_path, sizeof (target->path));
+				strncpy(target->device, device,   sizeof (target->device));
+				strncpy(target->iotype, iotype,   sizeof (target->iotype));
+// TODO				strncpy(target->iomode, iomode,   sizeof (target->iomode));
 
 				target->session = NULL;
 				session = sessions;
@@ -1245,8 +1249,8 @@ iscsi_enable_share_one_iet(sa_share_impl_t impl_share, int tid)
 
 	/* ====== */
 	/* PART 3 - Run local update script. */
-	if (access(EXTRA_SHARE_SCRIPT, X_OK) == 0) {
-		argv[0] = (char*)EXTRA_SHARE_SCRIPT;
+	if (access(EXTRA_ISCSI_SHARE_SCRIPT, X_OK) == 0) {
+		argv[0] = (char*)EXTRA_ISCSI_SHARE_SCRIPT;
 		argv[1] = tid_s;
 		argv[2] = NULL;
 
@@ -1325,8 +1329,8 @@ iscsi_enable_share_one_scst(sa_share_impl_t impl_share, int tid)
 
 	/* ====== */
 	/* PART 5 - Run local update script. */
-	if (access(EXTRA_SHARE_SCRIPT, X_OK) == 0) {
-		argv[0] = (char*)EXTRA_SHARE_SCRIPT;
+	if (access(EXTRA_ISCSI_SHARE_SCRIPT, X_OK) == 0) {
+		argv[0] = (char*)EXTRA_ISCSI_SHARE_SCRIPT;
 		argv[1] = opts->name;
 		argv[2] = NULL;
 
@@ -1346,12 +1350,14 @@ iscsi_enable_share_one_scst(sa_share_impl_t impl_share, int tid)
 static int
 iscsi_enable_share_one(sa_share_impl_t impl_share, int tid)
 {
-	int rc;
+	int rc = SA_OK;
 
 	if (iscsi_implementation == 1)
 		rc = iscsi_enable_share_one_iet(impl_share, tid);
 	else if (iscsi_implementation == 2)
 		rc = iscsi_enable_share_one_scst(impl_share, tid);
+	else
+		rc = SA_SYSTEM_ERR;
 
 	return rc;
 }
@@ -1539,7 +1545,6 @@ iscsi_is_share_active(sa_share_impl_t impl_share)
 
 	/* Retreive the list of (possible) active shares */
 	iscsi_retrieve_targets();
-
 	while (iscsi_targets != NULL) {
 #ifdef DEBUG
 		fprintf(stderr, "iscsi_is_share_active: %s ?? %s\n",
@@ -1571,37 +1576,41 @@ static int
 iscsi_update_shareopts(sa_share_impl_t impl_share, const char *resource,
 		       const char *shareopts)
 {
-	char *shareopts_dup, *old_shareopts, iqn[255];;
+	char *shareopts_dup, *old_shareopts, tmp_opts[255], iqn[255];
 	boolean_t needs_reshare = B_FALSE, have_active_sessions = B_FALSE;
-	
+
 	if(impl_share->dataset == NULL)
 		return B_FALSE;
 
 	/* Does this target have active sessions? */
 	iscsi_retrieve_targets();
-
 	while (iscsi_targets != NULL) {
 		if ((strcmp(impl_share->sharepath, iscsi_targets->path) == 0) &&
 		    iscsi_targets->session && iscsi_targets->session->state) {
 			have_active_sessions = B_TRUE;
+
 			break;
 		}
 
 		iscsi_targets = iscsi_targets->next;
 	}
 
+	/* Is the share active (i.e., shared */
 	FSINFO(impl_share, iscsi_fstype)->active =
 		iscsi_is_share_active(impl_share);
 
+	/* Get old share opts */
 	old_shareopts = FSINFO(impl_share, iscsi_fstype)->shareopts;
 
-	if (strcmp(shareopts, "on") == 0) {
+	if (strcmp(shareopts, "on") == 0 || strncmp(shareopts, "name=", 5) != 0) {
 		/* Force a IQN value. This so that the iqn doesn't change
 		 * 'next month' (when it's regenerated again) .
 		 * NOTE: Does not change shareiscsi option, only sharetab!
 		 */
-		if (iscsi_generate_target(impl_share->dataset, iqn, sizeof (iqn)) == 0)
-			snprintf(shareopts, strlen(iqn)+6, "name=%s", iqn);
+		if (iscsi_generate_target(impl_share->dataset, iqn, sizeof (iqn)) == 0) {
+			snprintf(tmp_opts, sizeof (tmp_opts), "name=%s,%s", iqn, shareopts);
+			shareopts = tmp_opts;
+		}
 	}
 
 #ifdef DEBUG
