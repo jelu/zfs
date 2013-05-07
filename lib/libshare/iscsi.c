@@ -190,9 +190,18 @@ iscsi_read_sysfs_value(char *path, char **value)
 	scst_sysfs_file_fp = fopen(path, "r");
 	if (scst_sysfs_file_fp != NULL) {
 		if (fgets(buffer, sizeof (buffer), scst_sysfs_file_fp) != NULL) {
+
+	        /* Trim trailing new-line character(s). */
 			buffer_len = strlen(buffer);
-			if (buffer[buffer_len - 1] == '\r' || buffer[buffer_len - 1] == '\n')
-				buffer[buffer_len - 1] = 0;
+			while (buffer_len > 0) {
+			    buffer_len--;
+			    if (buffer[buffer_len] == '\r' || buffer[buffer_len] == '\n') {
+	                buffer[buffer_len] = 0;
+			    }
+			    else {
+			        break;
+			    }
+			}
 
 			*value = strdup(buffer);
 
@@ -445,6 +454,9 @@ iscsi_generate_device_name(char *name, char **device)
 }
 
 /* Reads the file and register if a tid have a sid. Save the value in iscsi_targets->state */
+/* TODO:
+ * There is a rc variable but we can't return it, meaningless?
+ */
 static iscsi_session_t *
 iscsi_retrieve_sessions_iet(void)
 {
@@ -468,11 +480,17 @@ iscsi_retrieve_sessions_iet(void)
 
 	/* Load the file... */
 	while (fgets(buffer, sizeof (buffer), iscsi_volumes_fp) != NULL) {
-		/* Trim trailing new-line character(s). */
-		buffer_len = strlen(buffer);
-		while (buffer[buffer_len - 1] == '\r' ||
-		       buffer[buffer_len - 1] == '\n')
-			buffer[buffer_len - 1] = '\0';
+        /* Trim trailing new-line character(s). */
+        buffer_len = strlen(buffer);
+        while (buffer_len > 0) {
+            buffer_len--;
+            if (buffer[buffer_len] == '\r' || buffer[buffer_len] == '\n') {
+                buffer[buffer_len] = 0;
+            }
+            else {
+                break;
+            }
+        }
 
 		if (buffer[0] != '\t') {
 			/*
@@ -483,39 +501,26 @@ iscsi_retrieve_sessions_iet(void)
 			type = ISCSI_SESSION;
 
 			free(name);
-			name = NULL;
-
 			free(tid);
-			tid = NULL;
-
 			free(sid);
-			sid = NULL;
-
 			free(cid);
-			cid = NULL;
-
 			free(ip);
-			ip = NULL;
-
 			free(initiator);
-			initiator = NULL;
-
 			free(state);
-			state = NULL;
-
 			free(hd);
-			hd = NULL;
-
 			free(dd);
-			dd = NULL;
+            name = tid = sid = cid = ip = initiator = state = hd = dd = NULL;
 		} else if (buffer[0] == '\t' && buffer[1] == '\t') {
 			/* Start with two tabs - CID definition */
 			line = buffer + 2;
 			type = ISCSI_CID;
-		} else {
+		} else if (buffer[0] == '\t') {
 			/* Start with one tab - SID definition */
 			line = buffer + 1;
 			type = ISCSI_SID;
+		} else {
+		    /* TODO: Unknown line, skip or fatal? */
+		    goto retrieve_sessions_iet_out;
 		}
 
 		/* Get each option, which is separated by space */
@@ -538,33 +543,67 @@ iscsi_retrieve_sessions_iet(void)
 				goto retrieve_sessions_iet_out;
 			}
 
+			/*
+			 * When match is found check that the previous value is not set, if
+			 * it is we exit fatally.
+			 */
 			if (type == ISCSI_SESSION) {
-				if (strcmp(key, "tid") == 0)
+				if (strcmp(key, "tid") == 0) {
+				    if (tid) {
+				        goto retrieve_sessions_iet_out;
+				    }
 					tid = dup_value;
-				else if (strcmp(key, "name") == 0)
+				} else if (strcmp(key, "name") == 0) {
+                    if (name) {
+                        goto retrieve_sessions_iet_out;
+                    }
 					name = dup_value;
-				else
+				} else {
 					free(dup_value);
+				}
 			} else if (type == ISCSI_SID) {
-				if (strcmp(key, "sid") == 0)
+				if (strcmp(key, "sid") == 0) {
+                    if (sid) {
+                        goto retrieve_sessions_iet_out;
+                    }
 					sid = dup_value;
-				else if (strcmp(key, "initiator") == 0)
+				} else if (strcmp(key, "initiator") == 0) {
+                    if (initiator) {
+                        goto retrieve_sessions_iet_out;
+                    }
 					initiator = dup_value;
-				else
+				} else {
 					free(dup_value);
+				}
 			} else {
-				if (strcmp(key, "cid") == 0)
+				if (strcmp(key, "cid") == 0) {
+                    if (cid) {
+                        goto retrieve_sessions_iet_out;
+                    }
 					cid = dup_value;
-				else if (strcmp(key, "ip") == 0)
+				} else if (strcmp(key, "ip") == 0) {
+                    if (ip) {
+                        goto retrieve_sessions_iet_out;
+                    }
 					ip = dup_value;
-				else if (strcmp(key, "state") == 0)
+				} else if (strcmp(key, "state") == 0) {
+                    if (state) {
+                        goto retrieve_sessions_iet_out;
+                    }
 					state = dup_value;
-				else if (strcmp(key, "hd") == 0)
+				} else if (strcmp(key, "hd") == 0) {
+                    if (hd) {
+                        goto retrieve_sessions_iet_out;
+                    }
 					hd = dup_value;
-				else if (strcmp(key, "dd") == 0)
+				} else if (strcmp(key, "dd") == 0) {
+                    if (dd) {
+                        goto retrieve_sessions_iet_out;
+                    }
 					dd = dup_value;
-				else
+				} else {
 					free(dup_value);
+				}
 			}
 
 next_sessions:
@@ -611,6 +650,17 @@ next_sessions:
 	}
 
 retrieve_sessions_iet_out:
+    free(name);
+    free(tid);
+    free(sid);
+    free(cid);
+    free(ip);
+    free(initiator);
+    free(state);
+    free(hd);
+    free(dd);
+    name = tid = sid = cid = ip = initiator = state = hd = dd = NULL;
+
 	if (iscsi_volumes_fp != NULL)
 		fclose(iscsi_volumes_fp);
 
