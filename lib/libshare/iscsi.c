@@ -219,7 +219,7 @@ iscsi_write_sysfs_value(char *path, char *value)
 #ifdef DEBUG
 	fprintf(stderr, "iscsi_write_sysfs_value: %s\n                         => %s\n",
 		full_path, value);
-	rc = SA_OK;
+	rc = SA_OK; /* TODO: Always ok when debugging? */
 #endif
 
 	scst_sysfs_file_fp = fopen(full_path, "w");
@@ -246,16 +246,21 @@ static int
 iscsi_generate_target(const char *path, char *iqn, size_t iqn_len)
 {
 	char tsbuf[8]; /* YYYY-MM */
-	char domain[256], revname[255], name[255],
-		tmpdom[255], *p, tmp[20][255], *pos,
+	char domain[256], revname[256], name[256],
+		tmpdom[256], *p, tmp[20][256], *pos,
 		buffer[512], file_iqn[255];
 	time_t now;
 	struct tm *now_local;
-	int i;
+	int i, ret;
 	FILE *domainname_fp = NULL, *iscsi_target_name_fp = NULL;
 
 	if (path == NULL)
 		return SA_SYSTEM_ERR;
+
+    /* Make sure file_iqn buffer contain zero byte or else strlen() later
+     * can fail.
+     */
+	file_iqn[0] = 0;
 
 	iscsi_target_name_fp = fopen(TARGET_NAME_FILE, "r");
 	if (iscsi_target_name_fp == NULL) {
@@ -265,11 +270,16 @@ iscsi_generate_target(const char *path, char *iqn, size_t iqn_len)
 		now = time(NULL);
 		now_local = localtime(&now);
 		if (now_local == NULL)
-			return -1;
+			return -1; /* TODO: Shouldn't this be SA_SYSTEM_ERR or other? */
 
 		/* Parse EPOCH and get YYY-MM */
 		if (strftime(tsbuf, sizeof (tsbuf), "%Y-%m", now_local) == 0)
-			return -1;
+			return -1; /* TODO: Shouldn't this be SA_SYSTEM_ERR or other? */
+
+		/* Make sure domain buffer contain zero byte or else strlen() later
+		 * can fail.
+		 */
+		domain[0] = 0;
 
 #ifdef HAVE_GETDOMAINNAME
 		/* Retrieve the domain */
@@ -284,6 +294,9 @@ iscsi_generate_target(const char *path, char *iqn, size_t iqn_len)
 			}
 
 			if (fgets(buffer, sizeof (buffer), domainname_fp) != NULL) {
+			    /* TODO: Shouldn't we check if the first line is larger then domain buffer?
+			     * It reads maximum 512 char line but domain is only 256
+			     */
 				strncpy(domain, buffer, sizeof (domain)-1);
 				domain[strlen(domain)-1] = '\0';
 			} else
@@ -301,12 +314,18 @@ iscsi_generate_target(const char *path, char *iqn, size_t iqn_len)
 		}
 
 		/* Reverse the domainname ('bayour.com' => 'com.bayour') */
-		strncpy(tmpdom, domain, sizeof (domain));
+		strncpy(tmpdom, domain, sizeof (tmpdom));
 
 		i = 0;
 		p = strtok(tmpdom, ".");
 		while (p != NULL) {
-			strncpy(tmp[i], p, strlen(p));
+            if (i == 20) {
+                /* Reached end of tmp[] */
+                /* TODO: print error? */
+                return SA_SYSTEM_ERR;
+            }
+
+            strncpy(tmp[i], p, sizeof(tmp[i]));
 			p = strtok(NULL, ".");
 			
 			i++;
@@ -315,11 +334,19 @@ iscsi_generate_target(const char *path, char *iqn, size_t iqn_len)
 		memset(&revname[0], 0, sizeof (revname));
 		for (; i >= 0; i--) {
 			if (strlen(revname)) {
-				snprintf(tmpdom, strlen(revname)+strlen(tmp[i])+2,
-					 "%s.%s", revname, tmp[i]);
-				snprintf(revname, strlen(tmpdom)+1, "%s", tmpdom);
+				ret = snprintf(tmpdom, sizeof(tmpdom), "%s.%s", revname, tmp[i]);
+			    if (ret < 0 || ret >= sizeof(tmpdom)) {
+	                /* TODO: print error? */
+	                return SA_SYSTEM_ERR;
+			    }
+
+				ret = snprintf(revname, sizeof(revname), "%s", tmpdom);
+			    if (ret < 0 || ret >= sizeof(revname)) {
+	                /* TODO: print error? */
+	                return SA_SYSTEM_ERR;
+			    }
 			} else {
-				strncpy(revname, tmp[i], strlen(tmp[i]));
+				strncpy(revname, tmp[i], sizeof(revname));
 				revname [sizeof(revname)-1] = '\0';
 			}
 		}
@@ -349,10 +376,20 @@ iscsi_generate_target(const char *path, char *iqn, size_t iqn_len)
 	}
 
 	/* Put the whole thing togheter => "iqn.2012-11.com.bayour:share.VirtualMachines.Astrix" */
-	if (strlen(file_iqn))
-		snprintf(iqn, iqn_len, "%s:%s", file_iqn, name);
-	else
-		snprintf(iqn, iqn_len, "iqn.%s.%s:%s", tsbuf, revname, name);
+	if (file_iqn[0]) {
+		ret = snprintf(iqn, iqn_len, "%s:%s", file_iqn, name);
+        if (ret < 0 || ret >= iqn_len) {
+            /* TODO: print error? */
+            return SA_SYSTEM_ERR;
+        }
+	}
+	else {
+	    ret = snprintf(iqn, iqn_len, "iqn.%s.%s:%s", tsbuf, revname, name);
+        if (ret < 0 || ret >= iqn_len) {
+            /* TODO: print error? */
+            return SA_SYSTEM_ERR;
+        }
+	}
 
 	return SA_OK;
 }
