@@ -107,6 +107,12 @@ iscsi_look_for_stuff(char *path, const char *needle, boolean_t check_dir, int in
 	iscsi_dirs_t *entries = NULL, *new_entries = NULL;
 	int ret;
 
+	/* Check that path is set */
+	/* TODO: Return NULL or use assert() for fatal error */
+	if (!path) {
+	    return NULL;
+	}
+
 	if ((dir = opendir(path))) {
 		while ((directory = readdir(dir))) {
 			if (directory->d_name[0] == '.')
@@ -168,6 +174,12 @@ iscsi_read_sysfs_value(char *path, char **value)
 	char buffer[255];
 	FILE *scst_sysfs_file_fp = NULL;
 
+    /* Check that path and value is set */
+    /* TODO: Return rc or use assert() for fatal error */
+	if (!path || !value) {
+	    return rc;
+	}
+
 	/* TODO: If *value is not NULL we might be dropping allocated memory, assert? */
 	*value = NULL;
 
@@ -210,6 +222,12 @@ iscsi_write_sysfs_value(char *path, char *value)
 	int rc = SA_SYSTEM_ERR;
 	FILE *scst_sysfs_file_fp = NULL;
 	int ret;
+
+    /* Check that path and value is set */
+    /* TODO: Return rc or use assert() for fatal error */
+    if (!path || !value) {
+        return rc;
+    }
 
 	ret = snprintf(full_path, sizeof(full_path), "%s/%s", SYSFS_SCST, path);
     if (ret < 0 || ret >= sizeof(full_path)) {
@@ -256,6 +274,12 @@ iscsi_generate_target(const char *path, char *iqn, size_t iqn_len)
 
 	if (path == NULL)
 		return SA_SYSTEM_ERR;
+
+    /* Check that iqn and iqn_len is set */
+    /* TODO: Return SA_SYSTEM_ERR or use assert() for fatal error */
+    if (!iqn || iqn_len < 1) {
+        return SA_SYSTEM_ERR;
+    }
 
     /* Make sure file_iqn buffer contain zero byte or else strlen() later
      * can fail.
@@ -394,11 +418,20 @@ iscsi_generate_target(const char *path, char *iqn, size_t iqn_len)
 	return SA_OK;
 }
 
+/* TODO:
+ * name not used?
+ */
 static void
 iscsi_generate_device_name(char *name, char **device)
 {
 	int i;
 	char string[17], src_chars[62] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+    /* Check that device is set */
+    /* TODO: Return or use assert() for fatal error */
+    if (!device) {
+        return;
+    }
 
 	/* Seed number for rand() */
 	srand((unsigned int) time(0) + getpid());
