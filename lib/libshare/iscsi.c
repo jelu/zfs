@@ -87,22 +87,38 @@ typedef struct iscsi_dirs_s {
 	struct	iscsi_dirs_s *next;
 } iscsi_dirs_t;
 
+/* TODO:
+ *
+ * Why is the last argument called index?
+ *
+ * Shouldn't it be called size or something else?
+ *
+ * Index refers to a place maybe in the path or needle, not matching the first
+ * characters in the d_name as it does.
+ *
+ */
 static iscsi_dirs_t *
 iscsi_look_for_stuff(char *path, const char *needle, boolean_t check_dir, int index)
 {
-	char path2[PATH_MAX], path3[PATH_MAX];
+	char path2[PATH_MAX], *path3;
 	DIR *dir;
 	struct dirent *directory;
 	struct stat eStat;
 	iscsi_dirs_t *entries = NULL, *new_entries = NULL;
+	int ret;
 
 	if ((dir = opendir(path))) {
 		while ((directory = readdir(dir))) {
 			if (directory->d_name[0] == '.')
 				continue;
 
-			snprintf(path2, sizeof (path2),
+			path3 = NULL;
+			ret = snprintf(path2, sizeof (path2),
 				 "%s/%s", path, directory->d_name);
+			if (ret < 0 || ret >= sizeof(path2)) {
+			    /* Error or not enough space in string */
+			    continue; /* TODO: Decide to continue or break */
+			}
 
 			if (stat(path2, &eStat) == -1)
 				goto look_out;
@@ -113,23 +129,24 @@ iscsi_look_for_stuff(char *path, const char *needle, boolean_t check_dir, int in
 			if (needle != NULL) {
 				if (index) {
 					if (strncmp(directory->d_name, needle, index) == 0)
-						strncpy(path3, path2, sizeof(path3));
+						path3 = path2;
 				} else {
 					if (strcmp(directory->d_name, needle) == 0)
-						strncpy(path3, path2, sizeof(path3));
+					    path3 = path2;
 				}
 			} else {
 				if (strcmp(directory->d_name, "mgmt") == 0) 
 					continue;
 
-				strncpy(path3, path2, sizeof(path3));
+				path3 = path2;
 			}
 
 			entries = (iscsi_dirs_t *)malloc(sizeof (iscsi_dirs_t));
 			if (entries == NULL)
 				goto look_out;
 
-			strncpy(entries->path, path3, sizeof(entries->path));
+			if (path3)
+			    strncpy(entries->path, path3, sizeof(entries->path));
 			strncpy(entries->entry, directory->d_name, sizeof(entries->entry));
 			entries->stats = eStat;
 
@@ -151,6 +168,7 @@ iscsi_read_sysfs_value(char *path, char **value)
 	char buffer[255];
 	FILE *scst_sysfs_file_fp = NULL;
 
+	/* TODO: If *value is not NULL we might be dropping allocated memory, assert? */
 	*value = NULL;
 
 #ifdef DEBUG
@@ -161,9 +179,8 @@ iscsi_read_sysfs_value(char *path, char **value)
 	if (scst_sysfs_file_fp != NULL) {
 		if (fgets(buffer, sizeof (buffer), scst_sysfs_file_fp) != NULL) {
 			buffer_len = strlen(buffer);
-			while (buffer[buffer_len - 1] == '\r' ||
-			       buffer[buffer_len - 1] == '\n')
-				buffer[buffer_len - 1] = '\0';
+			if (buffer[buffer_len - 1] == '\r' || buffer[buffer_len - 1] == '\n')
+				buffer[buffer_len - 1] = 0;
 
 			*value = strdup(buffer);
 
@@ -171,7 +188,10 @@ iscsi_read_sysfs_value(char *path, char **value)
 			fprintf(stderr, ", value=%s", *value);
 #endif
 
-			rc = SA_OK;
+            /* Check that strdup() was successful */
+			if (*value) {
+			    rc = SA_OK;
+			}
 		}
 
 		fclose(scst_sysfs_file_fp);
@@ -189,8 +209,12 @@ iscsi_write_sysfs_value(char *path, char *value)
 	char full_path[PATH_MAX];
 	int rc = SA_SYSTEM_ERR;
 	FILE *scst_sysfs_file_fp = NULL;
+	int ret;
 
-	sprintf(full_path, "%s/%s", SYSFS_SCST, path);
+	ret = snprintf(full_path, sizeof(full_path), "%s/%s", SYSFS_SCST, path);
+    if (ret < 0 || ret >= sizeof(full_path)) {
+        return rc;
+    }
 
 #ifdef DEBUG
 	fprintf(stderr, "iscsi_write_sysfs_value: %s\n                         => %s\n",
@@ -200,7 +224,7 @@ iscsi_write_sysfs_value(char *path, char *value)
 
 	scst_sysfs_file_fp = fopen(full_path, "w");
 	if (scst_sysfs_file_fp != NULL) {
-		if (fputs(value, scst_sysfs_file_fp))
+		if (fputs(value, scst_sysfs_file_fp) != EOF)
 			rc = SA_OK;
 
 		fclose(scst_sysfs_file_fp);
