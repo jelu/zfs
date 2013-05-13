@@ -87,6 +87,20 @@ typedef struct iscsi_dirs_s {
 	struct	iscsi_dirs_s *next;
 } iscsi_dirs_t;
 
+/**
+ * Free a list of iscsi_dirs_t's
+ */
+static void
+iscsi_dirs_free(iscsi_dirs_t *entries) {
+    iscsi_dirs_t *next;
+
+    while (entries) {
+        next = entries->next;
+
+        free(entries);
+    }
+}
+
 /* TODO:
  *
  * Why is the last argument called index?
@@ -659,7 +673,6 @@ retrieve_sessions_iet_out:
     free(state);
     free(hd);
     free(dd);
-    name = tid = sid = cid = ip = initiator = state = hd = dd = NULL;
 
 	if (iscsi_volumes_fp != NULL)
 		fclose(iscsi_volumes_fp);
@@ -677,69 +690,113 @@ retrieve_sessions_iet_out:
 static iscsi_session_t *
 iscsi_retrieve_sessions_scst(void)
 {
-	char path[PATH_MAX], tmp_path[PATH_MAX], *dup_path, *buffer;
-	iscsi_dirs_t *entries1, *entries2, *entries3;
+	char path[PATH_MAX], tmp_path[PATH_MAX], *buffer = NULL;
+	iscsi_dirs_t *entries1 = NULL, *entries2 = NULL, *entries3 = NULL;
+    iscsi_dirs_t *_entries1 = NULL, *_entries2 = NULL, *_entries3 = NULL;
 	iscsi_session_t *session, *new_session = NULL;
 	struct stat eStat;
+	int ret;
 
 	/* For storing the share info */
 	char *tid = NULL, *sid = NULL, *cid = NULL, *name = NULL, *initiator = NULL,
 		*ip = NULL, *state = NULL;
 
 	/* DIR: $SYSFS/targets/iscsi/$name*/
-	snprintf(path, sizeof (path), "%s/targets/iscsi", SYSFS_SCST);
+	ret = snprintf(path, sizeof (path), "%s/targets/iscsi", SYSFS_SCST);
+    if (ret < 0 || ret >= sizeof(path)) {
+        return NULL;
+    }
+
 	entries1 = iscsi_look_for_stuff(path, "iqn.", B_TRUE, 4);
+	_entries1 = entries1;
 	while (entries1 != NULL) {
 		/* DIR: $SYSFS/targets/iscsi/$name */
-		dup_path = entries1->path;
 
 		/* RETREIVE name */
-		name = strdup(entries1->entry);
+		name = entries1->entry;
 
 		/* RETREIVE tid */
-		snprintf(tmp_path, strlen(dup_path)+5, "%s/tid", dup_path);
-		iscsi_read_sysfs_value(tmp_path, &buffer);
-		tid = strdup(buffer);
+		ret = snprintf(tmp_path, sizeof(tmp_path), "%s/tid", entries1->path);
+	    if (ret < 0 || ret >= sizeof(tmp_path)) {
+	        goto iscsi_retrieve_sessions_scst_error;
+	    }
+		if (iscsi_read_sysfs_value(tmp_path, &buffer) != SA_OK) {
+            goto iscsi_retrieve_sessions_scst_error;
+		}
+		if (tid) {
+		    free(tid);
+		}
+		tid = buffer;
+		buffer = NULL;
 
-		snprintf(path, strlen(dup_path)+10, "%s/sessions", dup_path);
+		ret = snprintf(path, sizeof(path), "%s/sessions", entries1->path);
+        if (ret < 0 || ret >= sizeof(path)) {
+            goto iscsi_retrieve_sessions_scst_error;
+        }
 		entries2 = iscsi_look_for_stuff(path, "iqn.", B_TRUE, 4);
+		_entries2 = entries2;
 		while (entries2 != NULL) {
 			/* DIR: $SYSFS/targets/iscsi/$name/sessions/$initiator */
-			dup_path = entries2->path;
 
 			/* RETREIVE initiator */
-			initiator = strdup(entries2->entry);
+			initiator = entries2->entry;
 
 			/* RETREIVE sid */
-			snprintf(tmp_path, strlen(dup_path)+5,
-				 "%s/sid", dup_path);
-			iscsi_read_sysfs_value(tmp_path, &buffer);
-			sid = strdup(buffer);
+			ret = snprintf(tmp_path, sizeof(tmp_path), "%s/sid", entries2->path);
+	        if (ret < 0 || ret >= sizeof(tmp_path)) {
+	            goto iscsi_retrieve_sessions_scst_error;
+	        }
+			if (iscsi_read_sysfs_value(tmp_path, &buffer) != SA_OK) {
+                goto iscsi_retrieve_sessions_scst_error;
+			}
+	        if (sid) {
+	            free(sid);
+	        }
+	        sid = buffer;
+	        buffer = NULL;
 
-			entries3 = iscsi_look_for_stuff(dup_path, NULL, B_TRUE, 4);
+			entries3 = iscsi_look_for_stuff(entries2->path, NULL, B_TRUE, 4);
+			_entries3 = entries3;
 			while (entries3 != NULL) {
 				/* DIR: $SYSFS/targets/iscsi/$name/sessions/$initiator/$ip */
-				snprintf(path, sizeof (path), "%s/cid", entries3->path);
+			    ret = snprintf(path, sizeof (path), "%s/cid", entries3->path);
+	            if (ret < 0 || ret >= sizeof(path)) {
+	                goto iscsi_retrieve_sessions_scst_error;
+	            }
 				if (stat(path, &eStat) == -1)
 					/* Not a IP directory */
 					break;
 
-				dup_path = entries3->path;
-
 				/* RETREIVE ip */
-				ip = strdup(entries3->entry);
+				ip = entries3->entry;
 
 				/* RETREIVE cid */
-				snprintf(tmp_path, strlen(dup_path)+5,
-					 "%s/cid", dup_path);
-				iscsi_read_sysfs_value(tmp_path, &buffer);
-				cid = strdup(buffer);
+				ret = snprintf(tmp_path, sizeof(tmp_path), "%s/cid", entries3->path);
+	            if (ret < 0 || ret >= sizeof(tmp_path)) {
+	                goto iscsi_retrieve_sessions_scst_error;
+	            }
+	            if (iscsi_read_sysfs_value(tmp_path, &buffer) != SA_OK) {
+	                goto iscsi_retrieve_sessions_scst_error;
+	            }
+	            if (cid) {
+	                free(cid);
+	            }
+	            cid = buffer;
+	            buffer = NULL;
 
 				/* RETREIVE state */
-				snprintf(tmp_path, strlen(dup_path)+7,
-					 "%s/state", dup_path);
-				iscsi_read_sysfs_value(tmp_path, &buffer);
-				state = strdup(buffer);
+				ret = snprintf(tmp_path, sizeof(tmp_path), "%s/state", entries3->path);
+	            if (ret < 0 || ret >= sizeof(tmp_path)) {
+	                goto iscsi_retrieve_sessions_scst_error;
+	            }
+	            if (iscsi_read_sysfs_value(tmp_path, &buffer) != SA_OK) {
+	                goto iscsi_retrieve_sessions_scst_error;
+	            }
+	            if (state) {
+	                free(state);
+	            }
+	            state = buffer;
+	            buffer = NULL;
 
 				/* SAVE values */
 				if (tid == NULL || sid == NULL || cid == NULL ||
@@ -749,7 +806,7 @@ iscsi_retrieve_sessions_scst(void)
 
 				session = (iscsi_session_t *)malloc(sizeof (iscsi_session_t));
 				if (session == NULL)
-					exit(SA_NO_MEMORY);
+					exit(SA_NO_MEMORY); /* TODO: Why hard exit here and not in iscsi_retrieve_sessions_iet() ? */
 
 				session->tid = atoi(tid);
 				session->sid = atoi(sid);
@@ -778,19 +835,47 @@ iscsi_retrieve_sessions_scst(void)
 				session->next = new_session;
 				new_session = session;
 
+				/* clear variables */
+			    free(tid);
+			    free(sid);
+			    free(cid);
+			    free(state);
+			    name = tid = sid = cid = ip = initiator = state = NULL;
+
 				/* Next entry in initiator ip directory */
 				entries3 = entries3->next;
 			}
+			iscsi_dirs_free(_entries3);
 
 			/* Next entry in initiator directory */
 			entries2 = entries2->next;
 		}
+        iscsi_dirs_free(_entries2);
 
 		/* Next entry in target directory */
 		entries1 = entries1->next;
 	}
+	iscsi_dirs_free(_entries1);
 
-	return new_session;
+    free(tid);
+    free(sid);
+    free(cid);
+    free(state);
+
+    return new_session;
+
+iscsi_retrieve_sessions_scst_error:
+
+    iscsi_dirs_free(_entries1);
+    iscsi_dirs_free(_entries2);
+    iscsi_dirs_free(_entries3);
+
+    free(tid);
+    free(sid);
+    free(cid);
+    free(state);
+
+    return NULL;
 }
 
 /* iscsi_retrieve_targets_iet() retrieves list of iSCSI targets - IET version */
